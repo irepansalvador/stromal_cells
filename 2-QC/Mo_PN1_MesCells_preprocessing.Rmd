@@ -69,11 +69,19 @@ DefaultAssay(Mo_PN1_MesCells_nonblood) <- "RNA"
 
 ```{r Read 10X data,eval=FALSE}
 # Load the Mo_PN1_MesCells dataset
-cluster_dir <- ""
+cluster_dir <- "~/scratch/stromal_cells/1-cellranger_mapping/Mo_PN1_MesCells/Mo_PN1_MesCells"
 Mo_PN1_MesCells.data <- Read10X(data.dir = paste0(cluster_dir,"/outs/filtered_feature_bc_matrix/"))
-# Initialize the Seurat object with the raw (non-normalized data).
-Mo_PN1_MesCells <- CreateSeuratObject(counts = Mo_PN1_MesCells.data, project = "Tomato", min.cells = 3, min.features = 200)
-Mo_PN1_MesCells
 
+# Initialize the Seurat object with the raw (non-normalized data).
+Mo_PN1_MesCells <- CreateSeuratObject(counts = Mo_PN1_MesCells.data, 
+                                        project = "Mo_PN1_MesCells",
+                                        min.cells = 3, min.features = 200)
+rm(Mo_PN1_MesCells.data)
+saveRDS(Mo_PN1_MesCells, "Mo_PN1_MesCells_init.rds")
 ```
+
+```{r}
+Mo_PN1_MesCells <- readRDS("Mo_PN1_MesCells_init.rds")
+```
+
 
