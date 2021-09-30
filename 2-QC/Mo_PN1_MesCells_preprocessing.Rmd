@@ -1,0 +1,79 @@
+---
+title: "Mo_PN1_MesCells"
+author: "Irepan Salvador-Martinez"
+date: "30/09/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "100%", fig.align = "center",
+  message = FALSE, warning = FALSE
+)
+options(width = 900)
+```
+
+
+# Mo_PN1_MesCells Samples
+
+We did scRNAseq (10X version 3) of mouse endochondral bones cell populations (in a balanced/even representation way, by FACS isolation) in perinatal stages E18 (just before birth) and postnatal day 1 (PN1).
+
+## About input files
+
+The files used as input for this analysis are the files coming out of the the
+*cellranger count* pipeline.
+
+In this case I used cellranger v6.0.0.
+
+
+
+```{r packages}
+library(Matrix)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(DoubletFinder)
+library(BiocStyle)
+library(dittoSeq)
+library(RColorBrewer)
+```
+
+```{r}
+
+ggplotColours <- function(n = 6, h = c(0, 360) + 15){
+  if ((diff(h) %% 360) < 1) h[2] <- h[2] - 360/n
+  hcl(h = (seq(h[1], h[2], length = n)), c = 100, l = 65)
+}
+
+```
+
+
+## Loading data from 10X multi-modal experiments
+
+Seurat is also able to analyze data from multimodal 10X experiments processed using CellRanger v3.
+
+I first read all the data and then create a seurat object with the gene expression, and append the antibody and multiplex assays
+
+```{r Load precomputed data}
+Mo_PN1_MesCells <-  readRDS("Mo_PN1_MesCells_preProcess.rds")
+# define assay
+DefaultAssay(Mo_PN1_MesCells) <- "RNA"
+Mo_PN1_MesCells_nonblood <- readRDS("Mo_PN1_MesCells_nonblood.rds")
+DefaultAssay(Mo_PN1_MesCells_nonblood) <- "RNA"
+```
+
+
+```{r Read 10X data,eval=FALSE}
+# Load the Mo_PN1_MesCells dataset
+cluster_dir <- ""
+Mo_PN1_MesCells.data <- Read10X(data.dir = paste0(cluster_dir,"/outs/filtered_feature_bc_matrix/"))
+# Initialize the Seurat object with the raw (non-normalized data).
+Mo_PN1_MesCells <- CreateSeuratObject(counts = Mo_PN1_MesCells.data, project = "Tomato", min.cells = 3, min.features = 200)
+Mo_PN1_MesCells
+
+```
+
