@@ -462,6 +462,17 @@ dittoBarPlot(object = Mo_PN1_MesCells,
              group.by = "RNA_snn_res.0.2")
 ```
 
+## Export to rds for viz
+
+```{r, eval=FALSE}
+source(file = "../utils/seurat2shiny.R")
+
+seurat2shiny(object = Mo_PN1_MesCells, assay = "RNA",save = T,
+             name = "rds_viz/Mo_PN1_MesCells_preprocess")
+
+
+```
+
 
 ```{r}
 sessionInfo()
