@@ -52,11 +52,9 @@ ggplotColours <- function(n = 6, h = c(0, 360) + 15){
 ```
 
 
-## Loading data from 10X multi-modal experiments
+## Loading data from 10X
 
 Seurat is also able to analyze data from multimodal 10X experiments processed using CellRanger v3.
-
-I first read all the data and then create a seurat object with the gene expression, and append the antibody and multiplex assays
 
 
 ```{r Read 10X data,eval=FALSE}
@@ -105,8 +103,8 @@ head(Mo_PN1_MesCells@meta.data, 10)
 
 In the example below, we visualize QC metrics, and use these to filter cells.
 
-  We filter cells that have unique feature counts over 2,500 or less than 200
-  We filter cells that have >5% mitochondrial counts
+  We filter cells that have unique feature counts over 6,000 or less than 400
+  We filter cells that have >10% mitochondrial counts
 
 
 
@@ -242,10 +240,10 @@ To cluster the cells, we next apply modularity optimization techniques such as t
 
 ```{r Graph based Clustering}
 Mo_PN1_MesCells <- FindNeighbors(Mo_PN1_MesCells, dims = 1:25)
-Mo_PN1_MesCells <- FindClusters(Mo_PN1_MesCells, resolution = 0.2)
 Mo_PN1_MesCells <- FindClusters(Mo_PN1_MesCells, resolution = 0.3)
 Mo_PN1_MesCells <- FindClusters(Mo_PN1_MesCells, resolution = 0.1)
 Mo_PN1_MesCells <- FindClusters(Mo_PN1_MesCells, resolution = 0.5)
+Mo_PN1_MesCells <- FindClusters(Mo_PN1_MesCells, resolution = 0.2)
 ```
 
 ### Run non-linear dimensional reduction (UMAP/tSNE)
@@ -471,6 +469,16 @@ seurat2shiny(object = Mo_PN1_MesCells, assay = "RNA",save = T,
              name = "rds_viz/Mo_PN1_MesCells_preprocess")
 
 
+```
+
+
+## Make a list of gene markers for each cluster
+
+```{r,eval=FALSE}
+all.markers <- FindAllMarkers(object = Mo_PN1_MesCells, only.pos = T, 
+                              logfc.threshold = 0.5, min.diff.pct = 0.2)
+
+write.csv(x = all.markers, file ="Mo_PN1_MesCells_allmarkers.csv")
 ```
 
 
