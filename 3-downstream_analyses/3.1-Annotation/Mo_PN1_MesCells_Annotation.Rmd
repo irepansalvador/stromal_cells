@@ -89,11 +89,11 @@ Mo_PN1_MesCells@meta.data$Cell_Type <- NA
 # C0=PaS/ Endosteal Fibroblasts (0, 176, 240)
 Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 0] <- "PaS/EndostealFibroblasts"
 # Neutrophils 1 (1, 203,0)
-Mo_PN1_MesCells@meta.data$Cell_Type[which(Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 1)] <- "Neutrophils2"
+Mo_PN1_MesCells@meta.data$Cell_Type[which(Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 1)] <- "Neutrophils1"
 # Monocytes (213, 252,121)
 Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 2] <- "Monocytes"
 # Neutrophils 2 (16, 152, 85)
-Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 3] <- "Neutrophils1"
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 3] <- "Neutrophils2"
 # CAR (255, 126, 72)
 Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 4] <- "doublets"
 #C5= Osteoclasts (174, 205, 100)
