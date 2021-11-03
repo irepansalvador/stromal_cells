@@ -182,10 +182,15 @@ DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", split.by = "orig.ident", pt.siz
 ## Compositional plot
 
 ```{r}
-dittoBarPlot(object = E18_PN1_Harmony,
-    var = "Cell_Type",
-    group.by = "orig.ident", 
-    retain.factor.levels = T, color.panel =col_palette ) + theme_bw()
+db <- dittoBarPlot(object = E18_PN1_Harmony,
+                   var = "Cell_Type",
+                   group.by = "orig.ident", 
+                   retain.factor.levels = T,
+                   color.panel =col_palette ) + theme_bw()
+db
+```
+```{r, eval=FALSE}
+write.csv(db$data, file = "E18_PN1_Harmony_CellType_composition.csv", row.names = FALSE)
 ```
 
 
