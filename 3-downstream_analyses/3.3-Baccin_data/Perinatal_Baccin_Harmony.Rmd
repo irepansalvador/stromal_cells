@@ -1,0 +1,176 @@
+---
+title: "Perinatal Baccin Harmony Integration"
+author: "Irepan Salvador-Martinez"
+date: "03/11/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  out.width = "100%", fig.align = "center",fig.width = 8,fig.height = 5,
+  message = FALSE, warning = FALSE
+)
+options(width = 900)
+```
+
+
+
+# About this analysis
+
+Now that we have the supervised annotations from Gretel, I will integrate both
+perinatal samples to the Baccin data using Harmony.
+
+
+```{r packages}
+library(dplyr)
+library(Seurat)
+library(cowplot)
+library(patchwork)
+library(ggplot2)
+library(BiocStyle)
+library(harmony)
+library(dittoSeq)
+library(RColorBrewer)
+```
+
+
+```{r,eval=FALSE}
+load("NicheData10x.rda")
+NicheData10x <- UpdateSeuratObject(object = NicheData10x)
+DimPlot(NicheData10x)
+```
+
+
+Get UMAP udsing the same PCs than the ones used for TSNE (16)
+
+```{r,eval=FALSE}
+ElbowPlot(NicheData10x)
+NicheData10x <- RunUMAP(NicheData10x, dims = 1:16)
+DimPlot(NicheData10x, label = T, repel = T) + theme_bw() + NoLegend()
+saveRDS(NicheData10x, "NicheData10x_v4_UMAP.rds")
+```
+
+
+# Integrate with Perinatal stages
+
+```{r,eval=FALSE}
+E18_PN1_Harmony <- readRDS("../3-downstream_analyses/3.2-Integration/E18_PN1_Harmony.rds")
+```
+
+## Merge datatsets
+
+Before running Harmony, make a Seurat object and following the standard pipeline through PCA.
+
+IMPORTANT DIFFERENCE: In the Seurat integration tutorial, you need to define a Seurat object for each dataset. With Harmony integration, create only one Seurat object with all cells.
+
+
+```{r,eval=FALSE}
+
+E18_PN1_Harmony$Experiment <- "Perinatal"
+
+NicheData10x$Experiment <- "Baccin"
+NicheData10x$Cell_Type <- NicheData10x@active.ident
+
+Perinatal_Baccin_Harmony <- merge(E18_PN1_Harmony, y =NicheData10x,
+                                  add.cell.ids = c("E18_PN1", "Baccin"),
+                                  project = "Perinatal_Baccin_Harmony") %>%
+  Seurat::NormalizeData(verbose = FALSE) %>%
+  FindVariableFeatures(selection.method = "vst", nfeatures = 3000)
+
+Perinatal_Baccin_Harmony <- ScaleData(Perinatal_Baccin_Harmony, verbose = FALSE,
+                                      features= rownames(Perinatal_Baccin_Harmony) ) %>%
+  RunPCA(pc.genes = Perinatal_Baccin_Harmony@var.genes, npcs = 30, verbose = FALSE)
+```
+
+
+
+```{r}
+Perinatal_Baccin_Harmony <- readRDS(file = "Perinatal_Baccin_Harmony.rds")
+```
+
+
+Usually there is a clear difference between the datasets in the uncorrected PCs compared to the corrected ones.
+Here the uncorrected:
+
+````{r}
+options(repr.plot.height = 5, repr.plot.width = 12)
+p1 <- DimPlot(object = Perinatal_Baccin_Harmony, reduction = "pca", pt.size = .1, group.by = "Experiment")
+p2 <- VlnPlot(object = Perinatal_Baccin_Harmony, features = "PC_1", group.by = "Experiment", pt.size = 0)
+plot_grid(p1,p2)
+```
+
+# Run Harmony
+
+
+The simplest way to run Harmony is to pass the Seurat object and specify which variable(s) to integrate out. RunHarmony returns a Seurat object, updated with the corrected Harmony coordinates. Let's set plot_convergence to TRUE, so we can make sure that the Harmony objective function gets better with each round.
+```{r,eval=FALSE}
+Perinatal_Baccin_Harmony <- Perinatal_Baccin_Harmony %>% 
+    RunHarmony("Experiment", plot_convergence = TRUE)
+
+```
+
+To directly access the new Harmony embeddings, use the Embeddings command.
+
+```{r}
+harmony_embeddings <- Embeddings(Perinatal_Baccin_Harmony, 'harmony')
+harmony_embeddings[1:5, 1:5]
+```
+
+
+ Let's make sure that the datasets are well integrated in the first 2 dimensions after Harmony.
+```{r}
+p1 <- DimPlot(object = Perinatal_Baccin_Harmony, reduction = "harmony", pt.size = .1, group.by = "Experiment")
+p2 <- VlnPlot(object = Perinatal_Baccin_Harmony, features = "harmony_1", group.by = "Experiment", pt.size = 0)
+plot_grid(p1,p2)
+```
+
+# Downstream analysis
+
+## FindNeighbours and UMAP
+
+Many downstream analyses are performed on low dimensional embeddings, not gene expression. To use the corrected Harmony embeddings rather than PCs, set reduction = 'harmony'. For example, let's perform the UMAP and Nearest Neighbor analyses using the Harmony embeddings.
+```{r, eval=FALSE}
+Perinatal_Baccin_Harmony <- Perinatal_Baccin_Harmony %>% 
+    RunUMAP(reduction = "harmony", dims = 1:30) %>% 
+    FindNeighbors(reduction = "harmony", dims = 1:30) %>% 
+    FindClusters(resolution = 0.4) %>% 
+    identity()
+```
+
+
+```{r}
+Perinatal_Baccin_Harmony@meta.data$Cell_Type <- as.character(Perinatal_Baccin_Harmony@meta.data$Cell_Type)
+DimPlot(Perinatal_Baccin_Harmony,
+        group.by = "Cell_Type",
+        split.by = "Experiment",
+        label = T, repel = T) * theme_bw()  * NoLegend()
+
+```
+
+# Export RDS for visualisation
+
+```{r}
+source("../../utils/seurat2shiny.R")
+seurat2shiny(Perinatal_Baccin_Harmony, reduction = "umap",
+             save = TRUE, name ="Perinatal_Baccin_Harmony")
+```
+
+
+
+# Save for later
+
+```{r, eval=FALSE}
+saveRDS(Perinatal_Baccin_Harmony, file = "Perinatal_Baccin_Harmony.rds")
+```
+
+
+# Sessio Info
+
+```{r}
+sessionInfo()
+```
+
