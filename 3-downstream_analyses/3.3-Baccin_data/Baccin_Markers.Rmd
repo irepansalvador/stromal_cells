@@ -1,0 +1,127 @@
+---
+title: "Perinatal Baccin Harmony Integration"
+author: "Irepan Salvador-Martinez"
+date: "03/11/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  out.width = "100%", fig.align = "center",fig.width = 8,fig.height = 5,
+  message = FALSE, warning = FALSE
+)
+options(width = 900)
+```
+
+
+
+# About this analysis
+
+Now that we have the supervised annotations from Gretel, I will integrate both
+perinatal samples to the Baccin data using Harmony.
+
+
+```{r packages}
+library(dplyr)
+library(Seurat)
+library(cowplot)
+library(patchwork)
+library(ggplot2)
+library(BiocStyle)
+library(harmony)
+library(dittoSeq)
+library(RColorBrewer)
+```
+
+
+```{r,eval=FALSE}
+load("NicheData10x.rda")
+NicheData10x <- UpdateSeuratObject(object = NicheData10x)
+DimPlot(NicheData10x)
+```
+
+
+Get UMAP udsing the same PCs than the ones used for TSNE (16)
+
+```{r,eval=FALSE}
+ElbowPlot(NicheData10x)
+NicheData10x <- RunUMAP(NicheData10x, dims = 1:16)
+DimPlot(NicheData10x, label = T, repel = T) + theme_bw() + NoLegend()
+saveRDS(NicheData10x, "NicheData10x_v4_UMAP.rds")
+```
+
+
+```{r}
+NicheData10x <- readRDS("Baccin_files/NicheData10x_v4_UMAP.rds")
+```
+
+```{r}
+DimPlot(NicheData10x, label = T, repel = T) + theme_bw() + NoLegend()
+```
+
+### Marker genes
+
+```{r}
+
+Stromal_fibro <- FindMarkers(NicheData10x, ident.1 = "Stromal fibro.", 
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           only.pos = T)
+Endosteal_fibro <- FindMarkers(NicheData10x, ident.1 = "Endosteal fibro.", 
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           only.pos = T)
+Fibro_Chondro <- FindMarkers(NicheData10x, ident.1 ="Fibro/Chondro p.", 
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           only.pos = T)
+Chondrocytes<- FindMarkers(NicheData10x, ident.1 = "Chondrocytes", 
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           only.pos = T)
+Myofibroblasts<- FindMarkers(NicheData10x, ident.1 = "Myofibroblasts", 
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           only.pos = T)
+Adipo_CARs <- FindMarkers(NicheData10x, ident.1 = "Adipo-CAR", 
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           only.pos = T)
+Osteo_CARs<- FindMarkers(NicheData10x, ident.1 = "Osteo-CAR",
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           only.pos = T)
+
+NG2 <- FindMarkers(NicheData10x, ident.1 = "Ng2+ MSCs", 
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           only.pos = T)
+Osteoblasts<- FindMarkers(NicheData10x, ident.1 = "Osteoblasts",
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           only.pos = T)
+
+```
+
+
+```{r}
+write.csv(x = Stromal_fibro, "./Marker_genes/Stromal_fibro.csv")
+write.csv(x = Endosteal_fibro, "./Marker_genes/Endosteal_fibro.csv")
+write.csv(x = Fibro_Chondro, "./Marker_genes/Fibro_Chondro.csv")
+write.csv(x = Chondrocytes, "./Marker_genes/Chondrocytes.csv")
+write.csv(x = Myofibroblasts, "./Marker_genes/Myofibroblasts.csv")
+write.csv(x = Adipo_CARs, "./Marker_genes/Adipo_CARs.csv")
+write.csv(x = Osteo_CARs, "./Marker_genes/Osteo_CARs.csv")
+write.csv(x = NG2, "./Marker_genes/NG2.csv")
+write.csv(x = Osteoblasts, "./Marker_genes/Osteoblasts.csv")
+```
+
+
+
+```{r}
+FeaturePlot(NicheData10x, features = rownames(Osteo_CARs)[1:4], order = T)
+
+```
+
+
+# Sessio Info
+
+```{r}
+sessionInfo()
+```
+

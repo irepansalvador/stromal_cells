@@ -1,0 +1,159 @@
+---
+title: "E18 and PN1 Harmony Integration"
+author: "Irepan Salvador-Martinez"
+date: "29/11/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  out.width = "100%", fig.align = "center",fig.width = 8,fig.height = 5,
+  message = FALSE, warning = FALSE
+)
+options(width = 900)
+```
+
+
+
+# About this analysis
+
+Now that we have the supervised annotations from Gretel, I will integrate both
+libraries using Harmony.
+
+
+```{r packages}
+library(dplyr)
+library(Seurat)
+library(cowplot)
+library(patchwork)
+library(ggplot2)
+library(BiocStyle)
+library(harmony)
+library(dittoSeq)
+library(RColorBrewer)
+```
+# Preprocess
+
+## Load pre-processed data
+
+```{r}
+E18_PN1_Harmony <- readRDS("E18_PN1_Harmony.rds")
+```
+
+## FindNeighbours and UMAP
+
+Many downstream analyses are performed on low dimensional embeddings, not gene expression. To use the corrected Harmony embeddings rather than PCs, set reduction = 'harmony'. For example, let's perform the UMAP and Nearest Neighbor analyses using the Harmony embeddings.
+```{r, eval=FALSE}
+E18_PN1_Harmony <- E18_PN1_Harmony %>% 
+    RunUMAP(reduction = "harmony", dims = 1:30) %>% 
+    FindNeighbors(reduction = "harmony", dims = 1:30) %>% 
+    FindClusters(resolution = 0.4) %>% 
+    identity()
+```
+
+
+```{r}
+DimPlot(E18_PN1_Harmony, reduction = "umap", group.by = "orig.ident", pt.size = .1, split.by = 'orig.ident')
+DimPlot(E18_PN1_Harmony, reduction = "umap", label = TRUE, pt.size = .1)
+```
+
+# Assign pre-defined color palette
+
+```{r}
+mylevels <- c("PaS/EndostealFibroblasts","Neutrophils1","Monocytes","Neutrophils2",
+              "CAR","Osteoclasts","Chondrogenic","HPC","B_cell","OCP","Eo/Bas","PFP","PHP",
+              "Myofibroblasts","Erythroid","Endothelial","Osteogenic","Schwann",
+              "Tenogenic","CLP_NK_Tcells","doublets")
+
+E18_PN1_Harmony@meta.data$Cell_Type <- factor(E18_PN1_Harmony@meta.data$Cell_Type, levels = mylevels)
+```
+
+```{r}
+col_palette <- c( rgb(0, 176/255, 240/255),       # C0=PaS/ Endosteal Fibroblasts (0, 176, 240)
+                  rgb(1/255, 203/255,0),          # Neutrophils 1 (1, 203,0)
+                  rgb(213/255, 252/255, 121/255), # Monocytes (213, 252,121)
+                  rgb(16/255, 152/255, 85/255),   # Neutrophils2 (16, 152, 85)
+                  rgb(255/255, 126/255, 72/255),  # CAR (255, 126, 72)
+                  rgb(174/255, 205/255, 100/255), # Osteoclasts (174, 205, 100)
+                  rgb(1/255, 134/255, 227/255),   # Chondrogenic Lineage (1, 134, 227)
+                  rgb(62/255, 243/255, 180/255),  #C7=HPC (hematopoietic progenitor cells) (62, 243, 180)
+                  rgb(101/255, 203/255, 176/255), #C8= B cell lineage (101, 203, 176)
+                  rgb(0, 145/255, 147/255),       #C9=OCP (0, 145, 147)
+                  rgb(122/255, 129/255, 255/255), #C10= Eo/Bas (122, 129, 255)
+                  rgb(121/255, 249/255, 255/255), #C11= Proliferating Fibroblasts Progenitors (PFP) (121, 249, 255)
+                  rgb(3/255, 50/255, 255/255),    #C12 = Proliferating Hematopoietic Progenitors (PHP) (3, 50, 255)
+                  rgb(255/255, 47/255, 146/255),  #C13= Myofibroblasts (255, 47, 146)
+                  rgb(205/255, 31/255, 113/255),  #C14= Erythroid cells (205, 31, 113)
+                  rgb(255/255, 191/255, 0/255),   #C15= EC (endothelial cells) (255, 191, 0)
+                  rgb(110/255, 68/255, 244/255),  #C16= Osteogenic lineage (110, 68, 244)
+                  rgb(244/255, 56/255, 234/255),  #C17=Schwann cells(244, 56, 234)
+                  rgb(254/255, 138/255, 216/255), #C18= Tenogenic lineage (254, 138, 216)
+                  rgb(191/255,144/255, 0),        #C19= CLP NK&Tcell (191,144, 0)
+                  rgb(0.6,0.6,0.6))
+
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", label = T, cols = col_palette, repel = T )
+```
+
+
+## Visualise by library
+
+```{r, fig.width=12, fig.height=6}
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", split.by = "orig.ident", pt.size = 0.3,
+        label = T, cols = col_palette, repel = T ) + theme_bw() + NoLegend() 
+
+```
+
+### Marker genes
+
+```{r}
+CAR_markers <- FindMarkers(E18_PN1_Harmony, ident.1 = "CAR", 
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           group.by = "Cell_Type",only.pos = T)
+Tenogenic_markers <- FindMarkers(E18_PN1_Harmony, ident.1 =  "Tenogenic",
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           group.by = "Cell_Type",only.pos = T)
+OCP_markers <- FindMarkers(E18_PN1_Harmony, ident.1 = "OCP",
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           group.by = "Cell_Type",only.pos = T)
+PaS_markers <- FindMarkers(E18_PN1_Harmony, ident.1 = "PaS/EndostealFibroblasts",
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           group.by = "Cell_Type",only.pos = T)
+Chondrogenic_markers<- FindMarkers(E18_PN1_Harmony, ident.1 = "Chondrogenic",
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           group.by = "Cell_Type",only.pos = T)
+Osteogenic_markers <- FindMarkers(E18_PN1_Harmony, ident.1 = "Osteogenic",
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           group.by = "Cell_Type",only.pos = T)
+Myofibroblasts_markers<- FindMarkers(E18_PN1_Harmony, ident.1 = "Myofibroblasts",
+                           min.pct = 0.3,logfc.threshold = 0.5, min.diff.pct = 0.2,
+                           group.by = "Cell_Type",only.pos = T)
+```
+
+```{r}
+write.csv(x = CAR_markers, "./Marker_genes/CAR_markers.csv")
+write.csv(x = Tenogenic_markers, "./Marker_genes/Tenogenic_markers.csv")
+write.csv(x = Osteogenic_markers, "./Marker_genes/Osteogenic_markers.csv")
+write.csv(x = Chondrogenic_markers, "./Marker_genes/Chondrogenic_markers.csv")
+write.csv(x = PaS_markers, "./Marker_genes/PaS_markers.csv")
+write.csv(x = OCP_markers, "./Marker_genes/OCP_markers.csv")
+write.csv(x = Myofibroblasts_markers, "./Marker_genes/Myofibroblasts_markers.csv")
+```
+
+```{r}
+FeaturePlot(E18_PN1_Harmony, features = rownames(Tenogenic_markers)[1:4], order = T)
+
+```
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+

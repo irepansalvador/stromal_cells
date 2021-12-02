@@ -1,0 +1,178 @@
+---
+title: "Mo_PN1_MesCells_Annotation"
+author: "Irepan Salvador-Martinez"
+date: "30/09/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "100%", fig.align = "center",
+  message = FALSE, warning = FALSE
+)
+options(width = 900)
+```
+
+
+# Mo_PN1_MesCells Samples
+
+We did scRNAseq (10X version 3) of mouse endochondral bones cell populations (in a balanced/even representation way, by FACS isolation) in perinatal stages E18 (just before birth) and postnatal day 1 (PN1).
+
+## About input files
+
+The files used as input for this analysis are the files coming out of the the
+*cellranger count* pipeline.
+
+In this case I used cellranger v6.0.0.
+
+
+
+```{r packages}
+library(Matrix)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(DoubletFinder)
+library(BiocStyle)
+library(dittoSeq)
+library(RColorBrewer)
+```
+
+```{r}
+
+ggplotColours <- function(n = 6, h = c(0, 360) + 15){
+  if ((diff(h) %% 360) < 1) h[2] <- h[2] - 360/n
+  hcl(h = (seq(h[1], h[2], length = n)), c = 100, l = 65)
+}
+
+```
+
+## Load pre-processed data
+
+```{r Load precomputed data}
+Mo_PN1_MesCells <-  readRDS("../../2-QC/Mo_PN1_MesCells.rds")
+dim(Mo_PN1_MesCells)
+```
+
+## Manual Annotation of the clusters
+
+I will annotate the clusters following the annotation made by Gretel.
+Most of the cell types agree with the clusters found at resolution "0.3" but there
+are 2 subclusters that I will manually annotate based on marker genes.
+
+```{r}
+DimPlot(Mo_PN1_MesCells, label = T, group.by = "RNA_snn_res.0.2" )
+```
+
+## Subdivide some clusters
+
+```{r}
+Mo_PN1_MesCells <- FindSubCluster(Mo_PN1_MesCells, cluster = 0,resolution = 0.5, graph.name = "RNA_snn", subcluster.name = "Tenocytes")
+DimPlot(Mo_PN1_MesCells, label = T, group.by ="Tenocytes",
+        cells = which(Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 0))
+```
+
+```{r}
+Mo_PN1_MesCells <- FindSubCluster(Mo_PN1_MesCells, cluster = 2,resolution = 0.2, graph.name = "RNA_snn", subcluster.name ="Osteoclasts")
+DimPlot(Mo_PN1_MesCells, label = T, group.by ="Osteoclasts",
+        cells = which(Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 2))
+```
+
+
+
+```{r}
+Mo_PN1_MesCells@meta.data$Cell_Type <- NA
+# C0=PaS/ Endosteal Fibroblasts (0, 176, 240)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 0] <- "PaS/EndostealFibroblasts"
+# Neutrophils 1 (1, 203,0)
+Mo_PN1_MesCells@meta.data$Cell_Type[which(Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 1)] <- "Neutrophils1"
+# Monocytes (213, 252,121)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 2] <- "Monocytes"
+# Neutrophils 2 (16, 152, 85)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 3] <- "Neutrophils2"
+# CAR (255, 126, 72)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 4] <- "doublets"
+#C5= Osteoclasts (174, 205, 100)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 5] <- "HPC"
+#C6= Chondrogenic Lineage (1, 134, 227)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 6] <- "CAR"
+#C7=HPC (hematopoietic progenitor cells) (62, 243, 180)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 7] <- "PFP"
+#C8= B cell lineage (101, 203, 176)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 8] <- "Chondrogenic"
+#C9=OCP (0, 145, 147)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 == 9] <- "OCP"
+#C10= Eo/Bas (122, 129, 255)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 ==10] <- "Endothelial"
+#C11= Proliferating Fibroblasts Progenitors (PFP) (121, 249, 255)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 ==11] <- "B_cell"
+#C12 = Proliferating Hematopoietic Progenitors (PHP) (3, 50, 255)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 ==12] <- "Eo/Bas"
+#C13= Myofibroblasts (255, 47, 146)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 ==13] <- "Osteogenic"
+#C14= Erythroid cells (205, 31, 113)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 ==14] <- "Myofibroblasts"
+#C15= EC (endothelial cells) (255, 191, 0)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 ==15] <- "Schwann"
+#C16= Osteogenic lineage (110, 68, 244)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 ==16] <- "Erythroid"
+#C17=Schwann cells(244, 56, 234)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$RNA_snn_res.0.2 ==17] <- "CLP_NK_Tcells"
+# C18= Tenogenic lineage (254, 138, 216)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$Tenocytes == "0_4"] <- "Tenogenic"
+# C19= CLP NK&Tcell (191,144, 0)
+Mo_PN1_MesCells@meta.data$Cell_Type[Mo_PN1_MesCells@meta.data$Osteoclasts == "2_1"] <-"Osteoclasts"
+
+
+
+mylevels <- c("PaS/EndostealFibroblasts","Neutrophils1","Monocytes","Neutrophils2",
+              "CAR","Osteoclasts","Chondrogenic","HPC","B_cell","OCP","Eo/Bas","PFP",#"PHP",
+              "Myofibroblasts","Erythroid","Endothelial","Osteogenic","Schwann",
+              "Tenogenic","CLP_NK_Tcells","doublets")
+
+Mo_PN1_MesCells@meta.data$Cell_Type <- factor(Mo_PN1_MesCells@meta.data$Cell_Type, levels = mylevels)
+#levels(Mo_PN1_MesCells@meta.data$Cell_Type) <- mylevels
+```
+
+
+```{r}
+col_palette <- c( rgb(0, 176/255, 240/255),       # C0=PaS/ Endosteal Fibroblasts (0, 176, 240)
+                  rgb(1/255, 203/255,0),          # Neutrophils 1 (1, 203,0)
+                  rgb(213/255, 252/255, 121/255), # Monocytes (213, 252,121)
+                  rgb(16/255, 152/255, 85/255),   # Neutrophils2 (16, 152, 85)
+                  rgb(255/255, 126/255, 72/255),  # CAR (255, 126, 72)
+                  rgb(174/255, 205/255, 100/255), # Osteoclasts (174, 205, 100)
+                  rgb(1/255, 134/255, 227/255),   # Chondrogenic Lineage (1, 134, 227)
+                  rgb(62/255, 243/255, 180/255),  #C7=HPC (hematopoietic progenitor cells) (62, 243, 180)
+                  rgb(101/255, 203/255, 176/255), #C8= B cell lineage (101, 203, 176)
+                  rgb(0, 145/255, 147/255),       #C9=OCP (0, 145, 147)
+                  rgb(122/255, 129/255, 255/255), #C10= Eo/Bas (122, 129, 255)
+                  rgb(121/255, 249/255, 255/255), #C11= Proliferating Fibroblasts Progenitors (PFP) (121, 249, 255)
+              #    rgb(3/255, 50/255, 255/255),    #C12 = Proliferating Hematopoietic Progenitors (PHP) (3, 50, 255)
+                  rgb(255/255, 47/255, 146/255),  #C13= Myofibroblasts (255, 47, 146)
+                  rgb(205/255, 31/255, 113/255),  #C14= Erythroid cells (205, 31, 113)
+                  rgb(255/255, 191/255, 0/255),   #C15= EC (endothelial cells) (255, 191, 0)
+                  rgb(110/255, 68/255, 244/255),  #C16= Osteogenic lineage (110, 68, 244)
+                  rgb(244/255, 56/255, 234/255),  #C17=Schwann cells(244, 56, 234)
+                  rgb(254/255, 138/255, 216/255), #C18= Tenogenic lineage (254, 138, 216)
+                  rgb(191/255,144/255, 0),        #C19= CLP NK&Tcell (191,144, 0)
+                  rgb(0.6,0.6,0.6))
+
+DimPlot(Mo_PN1_MesCells, group.by = "Cell_Type", label = T, cols = col_palette, repel = T )
+```
+
+```{r, eval=FALSE}
+saveRDS(Mo_PN1_MesCells, "Mo_PN1_MesCells_Annotated.rds")
+```
+
+
+
+```{r, fig.width=9, fig.height=6}
+DimPlot(Mo_PN1_MesCells, group.by = "Cell_Type", pt.size = 0.5, 
+        label = T, cols = col_palette, repel = T ) + theme_bw()
+```
+

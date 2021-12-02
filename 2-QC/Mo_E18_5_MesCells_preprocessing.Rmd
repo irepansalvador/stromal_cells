@@ -1,0 +1,488 @@
+---
+title: "Mo_E18_5_MesCells"
+author: "Irepan Salvador-Martinez"
+date: "30/09/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "100%", fig.align = "center",
+  message = FALSE, warning = FALSE
+)
+options(width = 900)
+```
+
+
+# Mo_E18_5_MesCells Samples
+
+We did scRNAseq (10X version 3) of mouse endochondral bones cell populations (in a balanced/even representation way, by FACS isolation) in perinatal stages E18 (just before birth) and postnatal day 1 (PN1).
+
+## About input files
+
+The files used as input for this analysis are the files coming out of the the
+*cellranger count* pipeline.
+
+In this case I used cellranger v6.0.0.
+
+
+
+```{r packages}
+library(Matrix)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(DoubletFinder)
+library(BiocStyle)
+library(dittoSeq)
+library(RColorBrewer)
+```
+
+```{r}
+
+ggplotColours <- function(n = 6, h = c(0, 360) + 15){
+  if ((diff(h) %% 360) < 1) h[2] <- h[2] - 360/n
+  hcl(h = (seq(h[1], h[2], length = n)), c = 100, l = 65)
+}
+
+```
+
+
+## Loading data from 10X
+
+Seurat is able to analyze data from 10X experiments processed using CellRanger v3.
+
+I first read all the data and then create a seurat object with the gene expression
+
+
+```{r Read 10X data,eval=FALSE}
+# Load the Mo_E18_5_MesCells dataset
+cluster_dir <- "~/scratch/stromal_cells/1-cellranger_mapping/Mo_E18_5_MesCells/Mo_E18_5_MesCells"
+Mo_E18_5_MesCells.data <- Read10X(data.dir = paste0(cluster_dir,"/outs/filtered_feature_bc_matrix/"))
+# Initialize the Seurat object with the raw (non-normalized data).
+Mo_E18_5_MesCells <- CreateSeuratObject(counts = Mo_E18_5_MesCells.data, 
+                                        project = "Mo_E18_5_MesCells",
+                                        min.cells = 3, min.features = 200)
+rm(Mo_E18_5_MesCells.data)
+saveRDS(Mo_E18_5_MesCells, "Mo_E18_5_MesCells_init.rds")
+```
+
+```{r}
+Mo_E18_5_MesCells <- readRDS("Mo_E18_5_MesCells_init.rds")
+```
+
+
+## Standard pre-processing workflow
+
+The steps below encompass the standard pre-processing workflow for scRNA-seq data in Seurat. These represent the selection and filtration of cells based on QC metrics, data normalization and scaling, and the detection of highly variable features.
+
+### QC and selecting cells for further analysis
+
+Seurat allows you to easily explore QC metrics and filter cells based on any user-defined criteria. A few QC metrics commonly used by the community include
+
+  The number of unique genes detected in each cell.
+    Low-quality cells or empty droplets will often have very few genes
+    Cell doublets or multiplets may exhibit an aberrantly high gene count
+  Similarly, the total number of molecules detected within a cell (correlates strongly with unique genes)
+  The percentage of reads that map to the mitochondrial genome
+    Low-quality / dying cells often exhibit extensive mitochondrial contamination
+    We calculate mitochondrial QC metrics with the PercentageFeatureSet function, which calculates the percentage of counts originating   from a set of features
+    We use the set of all genes starting with MT- as a set of mitochondrial genes
+
+```{r Mt genes}
+# The [[ operator can add columns to object metadata. This is a great place to stash QC stats
+Mo_E18_5_MesCells[["percent.mt"]] <- PercentageFeatureSet(Mo_E18_5_MesCells, pattern = "^mt-")
+# Show QC metrics for the first 5 cells
+head(Mo_E18_5_MesCells@meta.data, 10)
+```
+
+
+In the example below, we visualize QC metrics, and use these to filter cells.
+
+  We filter cells that have unique feature counts over 6,000 or less than 400
+  We filter cells that have >10% mitochondrial counts
+
+
+
+```{r QC metrics,fig.height=3}
+# Visualize QC metrics as a violin plot
+VlnPlot(Mo_E18_5_MesCells, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"),
+        group.by = "orig.ident", ncol = 3, pt.size = 0)
+```
+
+```{r,fig.height=3}
+ plot(x = Mo_E18_5_MesCells@meta.data$nCount_RNA,log = "y",
+            xlab = "RNA counts",ylab = "Features",
+      y = Mo_E18_5_MesCells@meta.data$nFeature_RNA, 
+      type = "p",pch=20 , cex= 0.2, col="darkblue")
+abline(h = c(400,6000), lty=2)
+abline(v = c(1000), lty=2)
+
+```
+
+
+```{r,fig.height=3}
+ plot(x = Mo_E18_5_MesCells@meta.data$nFeature_RNA,
+      xlab = "Features",ylab = "perc.mit",
+      y = Mo_E18_5_MesCells@meta.data$percent.mt, 
+      type = "p",pch=20 , cex= 0.2,#xlim = c(0,35000),
+      col="darkblue")
+abline(v = c(400,6000), lty=2)
+abline(h = c(10), lty=2)
+
+```
+
+```{r Filter cells,eval=FALSE}
+Mo_E18_5_MesCells <- subset(Mo_E18_5_MesCells, subset = nFeature_RNA > 400 & nFeature_RNA < 6000 & percent.mt < 10)
+```
+
+
+```{r Load precomputed data}
+dim(Mo_E18_5_MesCells)
+Mo_E18_5_MesCells <-  readRDS("Mo_E18_5_MesCells.rds")
+dim(Mo_E18_5_MesCells)
+```
+
+
+
+### Normalizing the data
+
+After removing unwanted cells from the dataset, the next step is to normalize the data. By default, we employ a global-scaling normalization method "LogNormalize" that normalizes the feature expression measurements for each cell by the total expression, multiplies this by a scale factor (10,000 by default), and log-transforms the result. Normalized values are stored in Mo_E18_5_MesCells[["RNA"]]@data.
+
+```{r Normalise, eval=FALSE}
+Mo_E18_5_MesCells <- NormalizeData(Mo_E18_5_MesCells, normalization.method = "LogNormalize",
+                         scale.factor = 10000)
+```
+
+### Identification of highly variable features (feature selection)
+
+We next calculate a subset of features that exhibit high cell-to-cell variation in the dataset (i.e, they are highly expressed in some cells, and lowly expressed in others). We and others have found that focusing on these genes in downstream analysis helps to highlight biological signal in single-cell datasets.
+
+Our procedure in Seurat3 is described in detail here, and improves on previous versions by directly modeling the mean-variance relationship inherent in single-cell data, and is implemented in the FindVariableFeatures function. By default, we return 2,000 features per dataset. These will be used in downstream analysis, like PCA.
+
+
+```{r Highly variable genes,eval=FALSE}
+
+Mo_E18_5_MesCells <- FindVariableFeatures(Mo_E18_5_MesCells, selection.method = "vst", nfeatures = 2000)
+
+```
+
+```{r SHOW Highly variable genes,eval=TRUE}
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(Mo_E18_5_MesCells), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(Mo_E18_5_MesCells)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2
+
+```
+
+### Scaling the data
+
+Next, we apply a linear transformation ('scaling') that is a standard pre-processing step prior to dimensional reduction techniques like PCA. The ScaleData function:
+
+  Shifts the expression of each gene, so that the mean expression across cells is 0
+  Scales the expression of each gene, so that the variance across cells is 1
+    This step gives equal weight in downstream analyses, so that highly-expressed genes do not dominate
+  The results of this are stored in Mo_E18_5_MesCells[["RNA"]]@scale.data
+```{r Scaling, eval=FALSE}
+all.genes <- rownames(Mo_E18_5_MesCells)
+Mo_E18_5_MesCells <- ScaleData(Mo_E18_5_MesCells, features = all.genes)
+
+```
+
+### Perform linear dimensional reduction
+
+Next we perform PCA on the scaled data. By default, only the previously determined variable features are used as input, but can be defined using features argument if you wish to choose a different subset.
+
+```{r PCA, eval=FALSE}
+Mo_E18_5_MesCells <- RunPCA(Mo_E18_5_MesCells, features = VariableFeatures(object = Mo_E18_5_MesCells))
+```
+
+Seurat provides several useful ways of visualizing both cells and features that define the PCA, including VizDimReduction, DimPlot, and DimHeatmap
+
+```{r}
+# Examine and visualize PCA results a few different ways
+print(Mo_E18_5_MesCells[["pca"]], dims = 1:5, nfeatures = 5)
+```
+
+```{r PCA genes}
+VizDimLoadings(Mo_E18_5_MesCells, dims = 1:2, reduction = "pca")
+```
+
+
+```{r PCA viz}
+DimPlot(Mo_E18_5_MesCells,group.by = "orig.ident", reduction = "pca")
+```
+
+```{r PCA 12 dims}
+DimHeatmap(Mo_E18_5_MesCells, dims = 1:9, cells = 500, balanced = TRUE)
+```
+
+## Determine the 'dimensionality' of the dataset
+
+```{r Elbowplot} 
+ElbowPlot(Mo_E18_5_MesCells, ndims = 50)
+```
+
+### Cluster the cells
+
+Seurat v3 applies a graph-based clustering approach, building upon initial strategies in (Macosko et al). Importantly, the distance metric which drives the clustering analysis (based on previously identified PCs) remains the same. However, the approach to partioning the cellular distance matrix into clusters has dramatically improved. The approach was heavily inspired by recent manuscripts which applied graph-based clustering approaches to scRNA-seq data [SNN-Cliq, Xu and Su, Bioinformatics, 2015] and CyTOF data [PhenoGraph, Levine et al., Cell, 2015]. Briefly, these methods embed cells in a graph structure - for example a K-nearest neighbor (KNN) graph, with edges drawn between cells with similar feature expression patterns, and then attempt to partition this graph into highly interconnected 'quasi-cliques' or 'communities'.
+
+As in PhenoGraph, we first construct a KNN graph based on the euclidean distance in PCA space, and refine the edge weights between any two cells based on the shared overlap in their local neighborhoods (Jaccard similarity). This step is performed using the FindNeighbors function, and takes as input the previously defined dimensionality of the dataset (first 25 PCs).
+
+To cluster the cells, we next apply modularity optimization techniques such as the Louvain algorithm (default) or SLM [SLM, Blondel et al., Journal of Statistical Mechanics], to iteratively group cells together, with the goal of optimizing the standard modularity function. The FindClusters function implements this procedure, and contains a resolution parameter that sets the 'granularity' of the downstream clustering, with increased values leading to a greater number of clusters. We find that setting this parameter between 0.4-1.2 typically returns good results for single-cell datasets of around 3K cells. Optimal resolution often increases for larger datasets. The clusters can be found using the Idents function.
+
+```{r Graph based Clustering}
+Mo_E18_5_MesCells <- FindNeighbors(Mo_E18_5_MesCells, dims = 1:25)
+Mo_E18_5_MesCells <- FindClusters(Mo_E18_5_MesCells, resolution = 0.1)
+Mo_E18_5_MesCells <- FindClusters(Mo_E18_5_MesCells, resolution = 0.5)
+Mo_E18_5_MesCells <- FindClusters(Mo_E18_5_MesCells, resolution = 0.2)
+Mo_E18_5_MesCells <- FindClusters(Mo_E18_5_MesCells, resolution = 0.3)
+```
+
+### Run non-linear dimensional reduction (UMAP/tSNE)
+
+Seurat offers several non-linear dimensional reduction techniques, such as tSNE and UMAP, to visualize and explore these datasets. The goal of these algorithms is to learn the underlying manifold of the data in order to place similar cells together in low-dimensional space. Cells within the graph-based clusters determined above should co-localize on these dimension reduction plots. As input to the UMAP and tSNE, we suggest using the same PCs as input to the clustering analysis.
+
+```{r compute UMAP, eval=FALSE}
+# If you haven't installed UMAP, you can do so via reticulate::py_install(packages =
+# 'umap-learn')
+Mo_E18_5_MesCells <- RunUMAP(Mo_E18_5_MesCells, dims = 1:25)
+```
+
+
+```{r plot UMAP}
+# note that you can set `label = TRUE` or use the LabelClusters function to help label
+# individual clusters
+DimPlot(Mo_E18_5_MesCells, reduction = "umap", label = T, label.size = 5)
+
+```
+
+```{r Gene and RNA counts}
+# note that you can set `label = TRUE` or use the LabelClusters function to help label
+# individual clusters
+FeaturePlot(Mo_E18_5_MesCells, reduction = "umap",
+            features = c("nCount_RNA", "nFeature_RNA"))
+```
+
+## Find Doublets
+
+I use here DoubletFinder for predcting doublets in the dataset
+
+DoubletFinder can be broken up into 4 steps:
+(1) Generate artificial doublets from existing scRNA-seq data
+(2) Pre-process merged real-artificial data
+(3) Perform PCA and use the PC distance matrix to find each cell's proportion of artificial k nearest neighbors (pANN)
+(4) Rank order and threshold pANN values according to the expected number of doublets
+
+
+
+```{r DoubletFinder 1, eval=FALSE}
+## pK Identification (no ground-truth) ---------------------------------------------------------------------------------------
+sweep.res.list_Fpl <- paramSweep_v3(Mo_E18_5_MesCells, PCs = 1:10, sct = FALSE)
+sweep.stats_Fpl <- summarizeSweep(sweep.res.list_Fpl, GT = FALSE)
+bcmvn_Fpl <- find.pK(sweep.stats_Fpl)
+```
+
+
+```{r DoubletFinder 2, eval=FALSE}
+## Homotypic Doublet Proportion Estimate -------------------------------------------------------------------------------------
+homotypic.prop <- modelHomotypic(Mo_E18_5_MesCells@meta.data$RNA_snn_res.0.2)           ## ex: annotations <- seu_kidney@meta.data$ClusteringResults
+nExp_poi <- round(0.075*nrow(Mo_E18_5_MesCells@meta.data))  ## Assuming 7.5% doublet formation rate - tailor for your dataset
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+```
+
+
+
+```{r DoubletFinder 3, eval=FALSE}
+Mo_E18_5_MesCells <- doubletFinder_v3(Mo_E18_5_MesCells, PCs = 1:10,
+                            pN = 0.25, pK = 0.09,
+                            nExp = nExp_poi, reuse.pANN = FALSE,
+                            sct = FALSE)
+Mo_E18_5_MesCells <- doubletFinder_v3(Mo_E18_5_MesCells, PCs = 1:10, 
+                            pN = 0.25, pK = 0.09,
+                            nExp = nExp_poi.adj,
+                            reuse.pANN = "pANN_0.25_0.09_569",
+                            sct = FALSE)
+```
+
+
+
+```{r DoubletFinder 4}
+DimPlot(Mo_E18_5_MesCells, group.by="DF.classifications_0.25_0.09_569",
+        cols = c("red","grey"),
+        reduction="umap", pt.size=0.3 
+        )
+```
+
+
+## Save Object for further analyses
+
+```{r Save Object for further analyses, eval=FALSE}
+saveRDS(Mo_E18_5_MesCells, "Mo_E18_5_MesCells.rds")
+```
+
+
+# Markers
+
+From Gretel:
+
+There are some "pan" markers for the different compartments and clusters and highly expressed markers (altough not exclusive) for clusters already well defined in the literature, I send you some examples and explanations.
+
+These clusters were defined following the unsupervised clustering first and redifined in more subclusters from our knowledge of the literature. Without doublets or dead cell filtration.
+
+In the stromal compartment there are clusters differents from adult and we have many questions, the aim of the study.
+
+## Hematopoietic compartment
+
+### a) Lymphoid and myeloid defined by CD45/ptprc 
+Other markers are: CD52, CD53 
+
+
+```{r Lymphoid markers}
+FeaturePlot(Mo_E18_5_MesCells,
+            features = c("Ptprc", # Leukocyte lineage
+                         "Cd52", # 
+                         "Cd53") # 
+            )
+```
+
+###  B) Erythroid lineage
+
+Is identified by Hbb-bt, Hba-a1, Hba-a2 (by FACS with TER119)
+
+
+```{r Erythroid markers}
+FeaturePlot(Mo_E18_5_MesCells,
+            features = c("Hbb-bt", # 
+                         "Hba-a1", # 
+                         "Hba-a2") # 
+            )
+```
+
+##     2) Endothelial compartment:
+
+Tek, Tie1, Cdh5, Sox7, Pecam1, (Eng, CD200, Ly6a, not exclusives but highly expressed in these cells)
+
+In perinatal is only one cluster but in adult 2 clusters are well defined: the arteriolar and the sinusoidal endothelial cells. 
+
+
+```{r Endothelial markers}
+FeaturePlot(Mo_E18_5_MesCells,
+            features = c("Tek", # 
+                         "Tie1", # 
+                         "Cdh5",
+                         "Pecam1") # 
+            )
+```
+
+## 3) Mesenchymal Compartment 
+
+Pan markers: Pdgfra, Prrx1, Col1a2,
+
+```{r Mesenchymal markers}
+FeaturePlot(Mo_E18_5_MesCells,
+            features = c("Pdgfra", # 
+                         "Prrx1", # 
+                         "Col1a2") # 
+            )
+```
+
+Committed lineages are easier to identify.
+
+### Osteoblasts & Hyperthrophic chondrocytes (HC is mainly in perinatal stages):
+
+Sp7, Runx2, Bglap, Bglap2,Bglap3, Mmp13, Col13a, Ibsp, Col1a1 (in perinatal stages they are all together) but are mainly in two populations in adult (according to the literature are progenitors of the osteo lineage).
+
+
+```{r Osteoblasts markers}
+FeaturePlot(Mo_E18_5_MesCells,
+            features = c("Sp7", # 
+                         "Mmp13", # 
+                         "Bglap",
+                         "Bglap2")# 
+            )
+```
+
+### Chondroblasts and chondrocytes: 
+
+Sox9,Sox5,Sox6, Col2a1, Acan, Col9a3, Col9a1,Nt5e (In perinatal stages some of the markers are not exclusive but the combination of all define the cluster).
+
+
+```{r Chondroblasts markers}
+FeaturePlot(Mo_E18_5_MesCells,order = T,
+            features = c("Sox9", # 
+                         "Sox5", # 
+                         "Sox6",
+                         "Col2a1")# 
+            )
+```
+
+
+Myofibroblasts: Pax7, Myf5, Myod1, Mrln, Msc
+
+```{r Myofibroblasts markers}
+FeaturePlot(Mo_E18_5_MesCells,order = T,
+            features = c("Pax7", # 
+                         "Myf5", # 
+                         "Myod1",
+                         "Mrln")# 
+            )
+```
+
+Other clusters in the bone
+
+Neural cells: 
+Schwann cells: Sox10, Mal, Plp1
+
+
+```{r Neural markers}
+FeaturePlot(Mo_E18_5_MesCells,order = T,
+            features = c("Sox10", # 
+                         "Mal", # 
+                         "Plp1" )
+            )
+```
+
+```{r}
+DimPlot(Mo_E18_5_MesCells, label = T, group.by = "RNA_snn_res.0.3" )
+```
+
+```{r,fig.height=3}
+dittoBarPlot(object = Mo_E18_5_MesCells,
+             var = "DF.classifications_0.25_0.09_569",
+             group.by = "RNA_snn_res.0.3")
+```
+
+## Export to rds for viz
+
+```{r, eval=FALSE}
+source(file = "../utils/seurat2shiny.R")
+
+seurat2shiny(object = Mo_E18_5_MesCells, assay = "RNA",save = T,
+             name = "rds_viz/Mo_E18_5_MesCells_preprocess")
+
+
+```
+
+## Make a list of gene markers for each cluster
+
+```{r,eval=FALSE}
+all.markers <- FindAllMarkers(object = Mo_E18_5_MesCells, only.pos = T, 
+                              logfc.threshold = 0.5, min.diff.pct = 0.2)
+
+write.csv(x = all.markers, file ="Mo_E18_5_MesCells_allmarkers.csv")
+```
+
+
+```{r}
+sessionInfo()
+```
+
+
