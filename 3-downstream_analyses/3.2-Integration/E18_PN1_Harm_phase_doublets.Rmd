@@ -1,0 +1,213 @@
+---
+title: "E18 and PN1 CC_Phase and Doublets removal"
+author: "Irepan Salvador-Martinez"
+date: "07/12/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  out.width = "100%", fig.align = "center",fig.width = 8,fig.height = 5,
+  message = FALSE, warning = FALSE
+)
+options(width = 900)
+```
+
+
+
+# About this analysis
+
+After the integration of the samples, I will remove the doublets and will compute
+the Cell cycle phase score.
+
+After this I will export the datasets for velocyto analysis.
+
+
+```{r packages}
+library(dplyr)
+library(Seurat)
+library(cowplot)
+library(patchwork)
+library(ggplot2)
+library(BiocStyle)
+library(harmony)
+library(dittoSeq)
+library(RColorBrewer)
+
+library(SeuratDisk)
+library(SeuratData)
+```
+# Preprocess
+
+## Load pre-processed data
+
+
+
+```{r}
+E18_PN1_Harmony <- readRDS("E18_PN1_Harm_Phase_doublets.rds")
+```
+
+
+# Assign pre-defined color palette
+
+```{r}
+mylevels <- c("PaS/EndostealFibroblasts","Neutrophils1","Monocytes","Neutrophils2",
+              "CAR","Osteoclasts","Chondrogenic","HPC","B_cell","OCP","Eo/Bas","PFP","PHP",
+              "Myofibroblasts","Erythroid","Endothelial","Osteogenic","Schwann",
+              "Tenogenic","CLP_NK_Tcells","doublets")
+
+E18_PN1_Harmony@meta.data$Cell_Type <- factor(E18_PN1_Harmony@meta.data$Cell_Type, levels = mylevels)
+```
+
+```{r}
+col_palette <- c( rgb(0, 176/255, 240/255),       # C0=PaS/ Endosteal Fibroblasts (0, 176, 240)
+                  rgb(1/255, 203/255,0),          # Neutrophils 1 (1, 203,0)
+                  rgb(213/255, 252/255, 121/255), # Monocytes (213, 252,121)
+                  rgb(16/255, 152/255, 85/255),   # Neutrophils2 (16, 152, 85)
+                  rgb(255/255, 126/255, 72/255),  # CAR (255, 126, 72)
+                  rgb(174/255, 205/255, 100/255), # Osteoclasts (174, 205, 100)
+                  rgb(1/255, 134/255, 227/255),   # Chondrogenic Lineage (1, 134, 227)
+                  rgb(62/255, 243/255, 180/255),  #C7=HPC (hematopoietic progenitor cells) (62, 243, 180)
+                  rgb(101/255, 203/255, 176/255), #C8= B cell lineage (101, 203, 176)
+                  rgb(0, 145/255, 147/255),       #C9=OCP (0, 145, 147)
+                  rgb(122/255, 129/255, 255/255), #C10= Eo/Bas (122, 129, 255)
+                  rgb(121/255, 249/255, 255/255), #C11= Proliferating Fibroblasts Progenitors (PFP) (121, 249, 255)
+                  rgb(3/255, 50/255, 255/255),    #C12 = Proliferating Hematopoietic Progenitors (PHP) (3, 50, 255)
+                  rgb(255/255, 47/255, 146/255),  #C13= Myofibroblasts (255, 47, 146)
+                  rgb(205/255, 31/255, 113/255),  #C14= Erythroid cells (205, 31, 113)
+                  rgb(255/255, 191/255, 0/255),   #C15= EC (endothelial cells) (255, 191, 0)
+                  rgb(110/255, 68/255, 244/255),  #C16= Osteogenic lineage (110, 68, 244)
+                  rgb(244/255, 56/255, 234/255),  #C17=Schwann cells(244, 56, 234)
+                  rgb(254/255, 138/255, 216/255), #C18= Tenogenic lineage (254, 138, 216)
+                  rgb(191/255,144/255, 0),        #C19= CLP NK&Tcell (191,144, 0)
+                  rgb(0.6,0.6,0.6))
+
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", label = T, cols = col_palette, repel = T )
+```
+
+
+## Visualise by library
+
+```{r, fig.width=12, fig.height=6}
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", split.by = "orig.ident", pt.size = 0.3,
+        label = T, cols = col_palette, repel = T ) + theme_bw() + NoLegend() 
+
+```
+
+```{r, eval=FALSE}
+#p1 <- DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", cols = col_palette, label = F ) + NoLegend()
+#doublets <- CellSelector(p1)
+#write.csv(x = doublets, file = "doublets_to_remove.csv")
+d <- read.csv(file = "doublets_to_remove.csv")
+doublets <- d$x
+allcells <- colnames(E18_PN1_Harmony)
+E18_PN1_Harmony <- subset(E18_PN1_Harmony, cells = setdiff(allcells,doublets) )
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", cols = col_palette, label = F )
+
+```
+
+## Get cell cycle phase
+
+In here I will assing a cellcycle score to the cells to know if they are in 
+proliferative (G2M and S phase) or non proliferative (G1) stage.
+
+This is to check if any cluster we find is dominated by cells in a specific cell
+cycle stage.
+
+```{r, eval=FALSE}
+# Basic function to convert human to mouse gene names
+#convertHumanGeneList <- function(x){
+#require("biomaRt")
+#human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+#mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+#genesV2 = getLDS(attributes = c("hgnc_symbol"), filters = "hgnc_symbol", values = x , mart = human, attributesL = c("mgi_symbol"), martL = mouse, uniqueRows=T)
+#humanx <- unique(genesV2[, 2])
+# Print the first 6 genes found to the screen
+#print(head(humanx))
+#return(humanx)
+#}
+```
+
+```{r, eval=FALSE}
+#m.s.genes <- convertHumanGeneList(cc.genes.updated.2019$s.genes)
+#m.g2m.genes <- convertHumanGeneList(cc.genes.updated.2019$g2m.genes)
+
+#write.csv(m.s.genes, file = "m.s.genes.csv")
+#write.csv(m.g2m.genes, file = "m.g2m.genes.csv")
+
+```
+
+
+```{r, eval=FALSE}
+m.s.genes  <- read.csv(file = "m.s.genes.csv", header = T, row.names = 1)
+m.s.genes  <- m.s.genes[,1]
+m.g2m.genes<- read.csv(file = "m.g2m.genes.csv", header = T, row.names = 1)
+m.g2m.genes <- m.g2m.genes[,1]
+```
+
+```{r, eval=FALSE}
+E18_PN1_Harmony <- CellCycleScoring(E18_PN1_Harmony, s.features = m.s.genes, 
+                                    g2m.features = m.g2m.genes, set.ident = TRUE)
+```
+
+
+
+```{r}
+DimPlot(E18_PN1_Harmony, group.by = "Phase", label = F,
+        cols= c("red", "green", "blue") )
+```
+
+
+## Export for velocyto by library
+
+
+```{r, eval=FALSE}
+########
+
+libs <- SplitObject(E18_PN1_Harmony, split.by = "orig.ident")
+
+for (i in 1:length(libs))
+{
+  libname <- unique(libs[[i]]@meta.data$orig.ident)
+  print(libname)
+    ## --------------------
+  count_matrix <- libs[[i]]@assays$RNA@counts
+  Stromal_scratch <- CreateSeuratObject(counts = count_matrix, project = libname, assay = "RNA",
+                                     meta.data = libs[[i]]@meta.data[, c(2:4,15,23)])
+  Stromal_scratch@reductions$umap.rna <- libs[[i]]@reductions$umap
+  # then we save it as a Seurat h5 object
+  #intermediate_h5_file=paste(input_file,".h5Seurat",sep="")
+  intermediate_h5_file= paste0("../3.4-RNAvel/h5ad/",libname,"_Rib.h5Seurat")
+  SaveH5Seurat(Stromal_scratch, filename = intermediate_h5_file, overwrite = T)
+  Convert(intermediate_h5_file, dest = "h5ad",overwrite = T)
+}
+
+
+```
+
+
+```{r, eval=FALSE}
+saveRDS(E18_PN1_Harmony, "E18_PN1_Harm_Phase_doublets.rds")
+```
+
+
+# Export RDS file for viz
+
+```{r, eval=FALSE}
+#source(file = "../../utils/seurat2shiny.R")
+
+#seurat2shiny(E18_PN1_Harmony, reduction = "umap", save = TRUE, name = "E18_PN1_Harmony")
+```
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
