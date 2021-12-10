@@ -168,6 +168,8 @@ DimPlot(E18_PN1_Harmony, group.by = "Phase", label = F,
 ```{r, eval=FALSE}
 ########
 
+E18_PN1_Harmony@meta.data$Cell_Type <- as.character(E18_PN1_Harmony@meta.data$Cell_Type)
+
 libs <- SplitObject(E18_PN1_Harmony, split.by = "orig.ident")
 
 for (i in 1:length(libs))
