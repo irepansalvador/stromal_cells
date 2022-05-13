@@ -1,0 +1,396 @@
+---
+title: "E18 Fibrob Level 1"
+author: "Irepan Salvador-Martinez"
+date: "01/03/2022"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  out.width = "100%", fig.align = "center",fig.width = 8,fig.height = 5,
+  message = FALSE, warning = FALSE
+)
+options(width = 900)
+```
+
+
+
+# About this analysis
+
+After the integration of the samples, I will remove the doublets and will compute
+the Cell cycle phase score.
+
+After this I will export the datasets for velocyto analysis.
+
+
+```{r packages}
+library(dplyr)
+library(Seurat)
+library(cowplot)
+library(patchwork)
+library(ggplot2)
+library(BiocStyle)
+library(harmony)
+library(dittoSeq)
+library(RColorBrewer)
+
+library(SeuratDisk)
+library(SeuratData)
+```
+
+
+```{r}
+ggplotColours <- function(n = 6, h = c(0, 360) + 15){
+  if ((diff(h) %% 360) < 1) h[2] <- h[2] - 360/n
+  hcl(h = (seq(h[1], h[2], length = n)), c = 100, l = 65)
+}
+
+```
+
+
+# Preprocess
+
+## Load pre-processed data
+
+
+
+```{r}
+#E18_PN1_Harm_Mes <- readRDS("../3.2-Integration/E18_PN1_Harm_onlyMes_doublets.rds")
+E18_PN1_Harm_Mes <- readRDS("E18_PN1_Harm_Mes_res_0.5.rds")
+
+```
+
+```{r plot UMAP, fig.height=8}
+DimPlot(E18_PN1_Harm_Mes,reduction = "umap.mesench",
+        group.by = c("RNA_snn_res.0.1","Cell_Type","Phase","doublets"),
+        ncol = 2,label = T) * NoLegend()
+```
+
+
+```{r, eval=FALSE}
+E18_PN1_Harm_Mes <- FindClusters(E18_PN1_Harm_Mes, resolution = 0.5)
+E18_PN1_Harm_Mes <- RunUMAP(E18_PN1_Harm_Mes, dims = 1:20, 
+                            reduction.name = "umap.mesench")
+```
+
+
+```{r, fig.height=6, fig.width=8}
+# note that you can set `label = TRUE` or use the LabelClusters function to help label
+# individual clusters
+p1 <- DimPlot(E18_PN1_Harm_Mes, reduction = "umap.mesench",
+        group.by = c("RNA_snn_res.0.5","Cell_Type"),
+        ncol = 2,label = T) * NoLegend()
+p1
+```
+
+```{r}
+#E18_PN1_Harm_Mes@meta.data$cluster_res.0.5 <- E18_PN1_Harm_Mes@meta.data$RNA_snn_res.0.5
+
+ DimPlot(E18_PN1_Harm_Mes, reduction = "umap.mesench",
+        group.by = c("cluster_res.0.5","Cell_Type"), label = T) * NoLegend()
+
+```
+
+```{r, eval=FALSE}
+saveRDS(object = E18_PN1_Harm_Mes, file = "E18_PN1_Harm_Mes_res_0.5.rds")
+```
+
+
+
+```{r, eval=FALSE}
+#install.packages("phateR")
+#reticulate::py_install("phate", pip=TRUE)
+##devtools::install_github("KrishnaswamyLab/phateR")
+#reticulate::py_discover_config("phate")
+
+library(reticulate)
+library(phateR)
+
+library(directlabels)
+
+E18_PN1_Harm_Mes.data <- list(data=as.matrix((E18_PN1_Harm_Mes@reductions$harmony@cell.embeddings)))
+
+E18_PN1_Harm_Mes.phate <- phate(E18_PN1_Harm_Mes.data$data,knn = 10,ndim = 3)
+summary(E18_PN1_Harm_Mes.phate)
+
+```
+
+```{r, fig.height=12}
+E18_PN1_ct <- E18_PN1_Harm_Mes@meta.data$Cell_Type
+clusters <-   E18_PN1_Harm_Mes@meta.data$RNA_snn_res.0.5
+
+p2 <- ggplot(E18_PN1_Harm_Mes.phate, aes(x=PHATE2, y=PHATE1,
+                      color=E18_PN1_ct)) +
+    geom_point(alpha=0.75) +# geom_label(aes(label=E18_ct, group=E18_ct), check_overlap = T)
+    directlabels::geom_dl(aes(label = E18_PN1_ct), method = "smart.grid")
+
+p3 <- ggplot(E18_PN1_Harm_Mes.phate, aes(x=PHATE2, y=PHATE1,
+                      color=clusters)) +
+    geom_point(alpha=0.75) +# geom_label(aes(label=E18_ct, group=E18_ct), check_overlap = T)
+    directlabels::geom_dl(aes(label = clusters), method = "smart.grid")
+
+p2 / p3
+```
+
+```{r, fig.width=9}
+
+ggplot(E18_PN1_Harm_Mes.phate, aes(x=PHATE2, y=PHATE1,
+                      color=E18_PN1_ct)) +
+    geom_point(alpha=0.75)+ 
+    facet_wrap(vars(E18_PN1_Harm_Mes@meta.data$orig.ident)) +
+    directlabels::geom_dl(aes(label = clusters), method = "smart.grid")
+
+```
+
+
+```{r eval=FALSE}
+# We will now store this as a custom dimensional reduction called 'mds'
+E18_PN1_Harm_Mes[["phate"]] <- CreateDimReducObject(embeddings = E18_PN1_Harm_Mes.phate$embedding[,c(1:2)],
+                                              key = "PHATE_", assay = DefaultAssay(E18_PN1_Harm_Mes))
+
+DimPlot(E18_PN1_Harm_Mes, reduction = "phate", split.by = "orig.ident", group.by = "Cell_Type")
+```
+
+## Export to shiny app
+
+```{r, eval=FALSE}
+source(file = "~/Desktop/Github/ESC_cEBPa_GRAF/utils/seurat2shiny.R")
+source(file = "../../utils/downsample_cells.R")
+
+data_subset <- downsample_cells(seurat = E18_PN1_Harm_Mes, var = "orig.ident", n_cells = 3000)
+
+seurat2shiny(object = E18_PN1_Harm_Mes, save = TRUE, reduction = "phate", name = "E18_PN1_Harm_Mes_PHATE_full")
+seurat2shiny(object = data_subset, save = TRUE, reduction = "phate", name = "E18_PN1_Harm_Mes_PHATE")
+
+```
+
+
+```{r, eval=FALSE}
+markers <- FindAllMarkers(object = E18_PN1_Harm_Mes, only.pos = T)
+
+write.csv(x = markers, file = "E18_PN1_Harm_Mes_reclustering_markers.csv" )
+
+```
+
+
+```{r, fig.height=12}
+FeaturePlot(object = E18_PN1_Harm_Mes,
+            features = c("Ptn", "Postn", "Ly6a", "Tspo", "Notch3","Ptch2"), 
+            order = T, reduction = "phate")*
+  xlim(-0.02,0.05) *
+  ylim(-0.02,0.055)  * scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+```
+
+```{r, fig.height=12}
+FeaturePlot(object = E18_PN1_Harm_Mes, 
+             features = c("Ptn", "Postn", "Ly6a", "Tspo", "Notch3","Ptch2"), 
+            order = T, reduction = "umap.mesench") * scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+```
+
+
+
+
+```{r, eval=FALSE}
+library(plotly)
+
+plot_ly(x=E18_PN1_Harm_Mes.phate$embedding[,1],
+        y=E18_PN1_Harm_Mes.phate$embedding[,2],
+        z=E18_PN1_Harm_Mes.phate$embedding[,3],
+        type="scatter3d", mode="markers",alpha = 1,
+        size = 1, color=clusters)
+
+```
+
+```{r}
+#old annotation
+Mesench_3D <- read.csv(file ="Mesench_Phate_3D_Perinatal.csv", row.names = 1)
+```
+
+
+
+```{r}
+# clusters <-   E18_PN1_Harm_Mes@meta.data$RNA_snn_res.0.5
+# E18_PN1_ct <- E18_PN1_Harm_Mes@meta.data$Cell_Type
+# 
+# #colors =  brewer.pal(12,"Set1")
+# colors =  ggplotColours(n = 12)
+# clust_cols <- colors[as.numeric(clusters)]
+# 
+# colors2 =  ggplotColours(n = 9)
+# celltype_cols <- colors2[as.numeric(as.factor(E18_PN1_ct))]
+# 
+# Mesench_3D <- as.data.frame(E18_PN1_Harm_Mes.phate$embedding)
+# Mesench_3D$clusters_cols <- clust_cols
+# Mesench_3D$celltype_cols <- celltype_cols
+# Mesench_3D$celltype <- E18_PN1_ct
+Mesench_3D$Mes_clusters <- E18_PN1_Harm_Mes@meta.data$cluster_res.0.5
+
+write.csv(x = Mesench_3D, file = "Mesench_Phate_3D_Perinatal_clusters.csv")
+
+```
+
+
+```{r, eval=FALSE}
+
+install.packages("ragg")
+remotes::install_github(c("rstudio/webshot2","rstudio/chromote",
+                          "r-lib/downlit","dmurdoch/pkgdown@issue1689"))
+
+library(rgl)
+library(webshot2)
+
+#cols <- rep(colors, 20)
+
+x=E18_PN1_Harm_Mes.phate$embedding[,1]
+y=E18_PN1_Harm_Mes.phate$embedding[,2]
+z=E18_PN1_Harm_Mes.phate$embedding[,3]
+
+### scatterplot3d package
+options(rgl.printRglwidget = TRUE)
+rgl.open() # Open a new RGL device
+#rgl.bg(color = "white") # Setup the background color
+rgl.spheres(x,y,z, color=colors, radius = 0.001, )
+rgl.bbox(color = c("#333377", "white"), emission = "#333377", draw_front = F,
+         specular = "#3333FF", shininess = 5, alpha = 0.8, 
+         xat = c(-10,10), yat =c(-10,10), zat = c(-10,10) )
+rgl.viewpoint(theta = 0, phi = 3, zoom = 0.7)
+movie3d(spin3d(rpm = 20,axis = c(0,1,0)),
+        duration = 1,#convert = NULL, clean = FALSE,
+        dir = "~/Desktop/Github/stromal_cells/3-downstream_analyses/3.5_Fibrob_level1/plots/" )
+rgl.close() # Open a new RGL device
+
+```
+
+```{r, eval=FALSE}
+# install.packages('reticulate')
+# reticulate::install_miniconda()
+# reticulate::conda_install('r-reticulate', 'python-kaleido')
+# 
+# reticulate::conda_install('r-reticulate', 'plotly', channel = 'plotly')
+# reticulate::use_miniconda('r-reticulate')
+```
+
+
+```{r, eval=FALSE}
+# library(plotly)
+# 
+# i <- 1
+#  
+# # font.pref <- list(size=13,family="Arial, sans-serif",color="black")
+# # x.list <- list(title = "Temperature (˚C)",titlefont = font.pref)
+# # y.list <- list(title = "Wavelength (nm)",titlefont = font.pref)
+# # z.list <- list(title = "CD Intensity",titlefont = font.pref)
+# 
+# cam.zoom = 0.5
+# ver.angle = 0
+# 
+# imgs <- seq(0,6.3,by=0.2)
+# 
+# for(i in 1:length(imgs)){
+#   outfile <- paste0("plots/plot_",sprintf(i, fmt = "%03.3g" ))
+#   graph <- plot_ly(x=E18_PN1_Harm_Mes.phate$embedding[,1],
+#         y=E18_PN1_Harm_Mes.phate$embedding[,2],
+#         z=E18_PN1_Harm_Mes.phate$embedding[,3],
+#         type="scatter3d", mode="markers",alpha = 1,
+#         size = 1, color=clusters) %>%
+#             layout(scene=list(camera = list(eye = list(x = cos(imgs[i])*cam.zoom,
+#                                                        y = sin(imgs[i])*cam.zoom,
+#                                                        z=0.2),
+#                                             center = list(x = 0,y = 0,z = 0))
+#                     ))
+#   graph
+#   cat("Now rendering iteration:", i,"\n")
+#   save_image(p = graph, file = paste(outfile,"png", sep="."))
+# #   plotly_IMAGE(graph,
+# #          width = 1200,
+# #          height = 1050,
+# #          format = "png",
+# #          scale = 1,
+# #          out_file = 
+#  }
+
+```
+
+
+## Split by library
+
+
+```{r, eval=FALSE}
+E18_PN1_Harm_list <- SplitObject(E18_PN1_Harm_Mes, split.by = "orig.ident")
+
+for (i in 1:length(E18_PN1_Harm_list))
+{
+print(i)
+  E18_PN1_Harm_list[[i]] <- NormalizeData(E18_PN1_Harm_list[[i]], verbose = FALSE) %>%
+    FindVariableFeatures(selection.method = "vst", nfeatures = 3000)
+
+E18_PN1_Harm_list[[i]] <- ScaleData(E18_PN1_Harm_list[[i]], verbose = FALSE,
+  features= rownames(E18_PN1_Harm_list[[i]]) ) %>%
+  RunPCA(pc.genes = E18_PN1_Harm_list[[i]]@var.genes, npcs = 30, verbose = FALSE) %>%
+  FindNeighbors(dims = 1:25) %>%
+  FindClusters(resolution = 0.5) %>%
+  RunUMAP(dims = 1:25)
+}
+
+```
+
+```{r,eval=FALSE}
+E18_Mes_only <- E18_PN1_Harm_list[[1]]
+PN1_Mes_only <- E18_PN1_Harm_list[[2]]
+rm(E18_PN1_Harm_list, E18_PN1_Harm_Mes)
+```
+
+```{r, fig.height=8,eval=FALSE}
+DimPlot(E18_Mes_only,  group.by = c("Cell_Type", "RNA_snn_res.0.5"),
+        label = T,ncol = 1)
+```
+
+
+```{r, fig.height=8,eval=FALSE}
+DimPlot(PN1_Mes_only, group.by = c("Cell_Type", "RNA_snn_res.0.5"),
+        label = T,ncol = 1)
+```
+
+## E18
+
+
+```{r, eval=FALSE}
+#install.packages("phateR")
+library(phateR)
+library(directlabels)
+E18_Mes_only.data <- list(data=as.matrix((E18_Mes_only@reductions$pca@cell.embeddings)))
+
+E18_Mes_only.phate <- phate(E18_Mes_only.data$data, )
+
+summary(E18_Mes_only.phate)
+plot(E18_Mes_only.phate, col=E18_Mes_only@meta.data$RNA_snn_res.0.5)
+
+```
+
+```{r eval=FALSE}
+E18_ct <- E18_Mes_only@meta.data$Cell_Type
+clusters <- E18_Mes_only@meta.data$RNA_snn_res.0.5
+
+
+ggplot(E18_Mes_only.phate, aes(x=PHATE2, y=PHATE1,
+                      color=E18_ct)) +
+    geom_point(alpha=0.75) +# geom_label(aes(label=E18_ct, group=E18_ct), check_overlap = T)
+    directlabels::geom_dl(aes(label = E18_ct), method = "smart.grid")
+
+```
+
+
+
+```{r,eval=FALSE}
+
+ggplot(E18_Mes_only.phate, aes(x=PHATE2, y=PHATE1,
+                      color=clusters)) +
+    geom_point(alpha=0.75) +# geom_label(aes(label=E18_ct, group=E18_ct), check_overlap = T)
+    directlabels::geom_dl(aes(label = clusters), method = "smart.grid")
+
+```
+
