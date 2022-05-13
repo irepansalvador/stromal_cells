@@ -109,6 +109,49 @@ E18_PN1_Harmony <- subset(E18_PN1_Harmony, cells = setdiff(allcells,doublets) )
 DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", cols = col_palette, label = F )
 
 ```
+## Remove Mesenchymal doublets (S1009a positive)
+
+
+```{r}
+DimPlot(E18_PN1_Harmony,group.by = "DF.classifications_0.25_0.09_569", split.by = "orig.ident")
+DimPlot(E18_PN1_Harmony,group.by = "DF.classifications_0.25_0.09_484", split.by = "orig.ident")
+FeaturePlot(E18_PN1_Harmony, features = c("S100a9", "Cstd5"))
+```
+
+```{r}
+E18_PN1_Harmony@meta.data$doublets <- "Singlet"
+E18_PN1_Harmony@meta.data$doublets[E18_PN1_Harmony@meta.data$DF.classifications_0.25_0.09_484 == "Doublet"] <- "Doublet"
+E18_PN1_Harmony@meta.data$doublets[E18_PN1_Harmony@meta.data$DF.classifications_0.25_0.09_569 == "Doublet"] <- "Doublet"
+DimPlot(E18_PN1_Harmony,group.by = "doublets", split.by = "orig.ident")
+```
+
+```{r, eval=FALSE}
+p1 <- DimPlot(E18_PN1_Harmony, group.by = "doublets", label = F ) + NoLegend()
+all_cells <- colnames(E18_PN1_Harmony)
+
+## select manually the Mesenchymal compartment
+Mes_cells <- CellSelector(p1)
+all_doublets <- all_cells[E18_PN1_Harmony@meta.data$doublets == "Doublet"]
+Mes_doublets <- intersect(all_doublets, Mes_cells)
+write.csv(x = Mes_doublets, file = "Mes_doublets_to_remove.csv")
+```
+
+
+```{r}
+#p1 <- DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", cols = col_palette, label = F ) + NoLegend()
+#doublets <- CellSelector(p1)
+#write.csv(x = doublets, file = "doublets_to_remove.csv")
+d <- read.csv(file = "Mes_doublets_to_remove.csv")
+doublets <- d$x
+all_cells <- colnames(E18_PN1_Harmony)
+E18_PN1_Harmony <- subset(E18_PN1_Harmony, cells = setdiff(all_cells,doublets) )
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", cols = col_palette, label = F )
+DimPlot(E18_PN1_Harmony,group.by = "doublets")
+```
+
+
+
+
 
 ## Get cell cycle phase
 
@@ -179,22 +222,136 @@ for (i in 1:length(libs))
     ## --------------------
   count_matrix <- libs[[i]]@assays$RNA@counts
   Stromal_scratch <- CreateSeuratObject(counts = count_matrix, project = libname, assay = "RNA",
-                                     meta.data = libs[[i]]@meta.data[, c(2:4,15,23)])
+                                     meta.data = libs[[i]]@meta.data[, c(2:4,15,23,25)])
   Stromal_scratch@reductions$umap.rna <- libs[[i]]@reductions$umap
   # then we save it as a Seurat h5 object
   #intermediate_h5_file=paste(input_file,".h5Seurat",sep="")
-  intermediate_h5_file= paste0("../3.4-RNAvel/h5ad/",libname,"_Rib.h5Seurat")
+  intermediate_h5_file= paste0("../3.4-RNAvel/h5ad/",libname,"_mes_doub.h5Seurat")
   SaveH5Seurat(Stromal_scratch, filename = intermediate_h5_file, overwrite = T)
   Convert(intermediate_h5_file, dest = "h5ad",overwrite = T)
 }
-
 
 ```
 
 
 ```{r, eval=FALSE}
-saveRDS(E18_PN1_Harmony, "E18_PN1_Harm_Phase_doublets.rds")
+saveRDS(E18_PN1_Harmony, "E18_PN1_Harm_Phase_Mes_doublets.rds")
 ```
+
+
+## Export only Mes cells
+
+
+```{r}
+Mes <- c("CAR", "Chondrogenic", "Myofibroblasts" ,"OCP",
+         "Osteogenic","PFP","PaS/EndostealFibroblasts","Schwann","Tenogenic")
+
+x <- E18_PN1_Harmony@meta.data$Cell_Type  %in%  Mes 
+E18_PN1_Harm_Mes <- subset(E18_PN1_Harmony, cells = colnames(E18_PN1_Harmony)[x])
+```
+
+```{r, fig.height=4}
+
+E18_PN1_Harm_Mes <- FindVariableFeatures(E18_PN1_Harm_Mes)
+E18_PN1_Harm_Mes <- RunPCA(E18_PN1_Harm_Mes,npcs = 50)#,
+                                  #features = VariableFeatures(object = E18_PN1_Harm_Mes))
+
+ElbowPlot(E18_PN1_Harm_Mes, ndims = 50)
+```
+
+
+
+```{r}
+
+E18_PN1_Harm_Mes <- FindNeighbors(E18_PN1_Harm_Mes, dims = 1:20)
+E18_PN1_Harm_Mes <- FindClusters(E18_PN1_Harm_Mes, resolution = 0.1)
+E18_PN1_Harm_Mes <- FindClusters(E18_PN1_Harm_Mes, resolution = 0.3)
+
+E18_PN1_Harm_Mes <- RunUMAP(E18_PN1_Harm_Mes, dims = 1:20, 
+                            reduction.name = "umap.mesench")
+```
+
+
+```{r plot UMAP, fig.height=8}
+# note that you can set `label = TRUE` or use the LabelClusters function to help label
+# individual clusters
+DimPlot(E18_PN1_Harm_Mes, reduction = "umap",
+        group.by = c("Cell_Type","doublets"),ncol = 1,
+        label = T)
+
+```
+
+
+```{r plot UMAP, fig.height=8}
+# note that you can set `label = TRUE` or use the LabelClusters function to help label
+# individual clusters
+DimPlot(E18_PN1_Harm_Mes, reduction = "umap.mesench",
+        group.by = c("RNA_snn_res.0.1","Cell_Type","Phase","doublets"),
+        ncol = 2,label = T) * NoLegend()
+
+```
+
+
+
+## Visualise by library
+
+```{r, fig.width=12, fig.height=6}
+DimPlot(E18_PN1_Harm_Mes, group.by = "Cell_Type",reduction = "umap.mesench",
+        split.by = "orig.ident", pt.size = 0.3,
+        label = T, cols = col_palette, repel = T ) + theme_bw() + NoLegend() 
+
+```
+```{r}
+E18_PN1_Harm_Mes <- FindClusters(E18_PN1_Harm_Mes,resolution = 0.3)
+DimPlot(E18_PN1_Harm_Mes, label = T,reduction = "umap.mesench")
+```
+```{r}
+DimPlot(E18_PN1_Harm_Mes, label = T,reduction = "umap.mesench", split.by = "orig.ident")
+```
+
+```{r}
+DimPlot(E18_PN1_Harm_Mes, label = T,group.by = "Cell_Type",reduction = "umap.mesench", split.by = "orig.ident")
+```
+
+## here!! 
+
+
+## Export for velocyto by library
+
+
+```{r, eval=FALSE}
+########
+
+E18_PN1_Harm_Mes@meta.data$Cell_Type <- as.character(E18_PN1_Harm_Mes@meta.data$Cell_Type)
+
+libs <- SplitObject(E18_PN1_Harm_Mes, split.by = "orig.ident")
+
+for (i in 1:length(libs))
+{
+  libname <- unique(libs[[i]]@meta.data$orig.ident)
+  print(libname)
+    ## --------------------
+  count_matrix <- libs[[i]]@assays$RNA@counts
+  Stromal_scratch <- CreateSeuratObject(counts = count_matrix, project = libname, assay = "RNA",
+                                     meta.data = libs[[i]]@meta.data[, c(2:4,15,23,25)])
+  Stromal_scratch@reductions$umap.rna <- libs[[i]]@reductions$umap
+  Stromal_scratch@reductions$umap.mesench <- libs[[i]]@reductions$umap.mesench
+  # then we save it as a Seurat h5 object
+  #intermediate_h5_file=paste(input_file,".h5Seurat",sep="")
+  intermediate_h5_file= paste0("../3.4-RNAvel/h5ad/",libname,"_onlyMes_doub.h5Seurat")
+  SaveH5Seurat(Stromal_scratch, filename = intermediate_h5_file, overwrite = T)
+  Convert(intermediate_h5_file, dest = "h5ad",overwrite = T)
+}
+
+```
+
+
+```{r, eval=FALSE}
+saveRDS(E18_PN1_Harm_Mes, "E18_PN1_Harm_onlyMes_doublets.rds")
+```
+
+
+
 
 
 # Export RDS file for viz

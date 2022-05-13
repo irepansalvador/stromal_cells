@@ -153,10 +153,35 @@ DimPlot(Perinatal_Baccin_Harmony,
 
 # Export RDS for visualisation
 
-```{r}
+
+```{r, eval=FALSE}
 source("../../utils/seurat2shiny.R")
+
+CT <- Perinatal_Baccin_Harmony$Cell_Type
+CT <- str_remove_all(CT, "[^[:alnum:]]")
+Perinatal_Baccin_Harmony@meta.data$CT <- as.factor(CT)
+
 seurat2shiny(Perinatal_Baccin_Harmony, reduction = "umap",
-             save = TRUE, name ="Perinatal_Baccin_Harmony")
+             asfactors = c("Cell_Type", "Experiment"),
+             save = TRUE, name ="Perinatal_Baccin_Harmony_CT")
+```
+
+```{r,eval=FALSE}
+# source("../../utils/downsample_cells.R")
+# 
+# subset <- downsample_cells(Perinatal_Baccin_Harmony, var = "Experiment",n_cells = 2000)
+# 
+# CT <- subset$Cell_Type
+# CT <- as.character(CT)
+# CT <- str_replace_all(CT, "[^[:alnum:]]", " ")
+# CT <- str_replace_all(CT," ", "")
+# 
+# subset@meta.data$CT <- as.factor(CT)
+# 
+# seurat2shiny(subset, reduction = "umap",
+#              asfactors = c("Cell_Type", "Experiment"),
+#              save = TRUE, name ="Perinatal_subset")
+
 ```
 
 
