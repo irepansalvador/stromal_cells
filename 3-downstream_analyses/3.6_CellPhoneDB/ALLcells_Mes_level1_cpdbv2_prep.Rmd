@@ -1,0 +1,245 @@
+---
+title: "CellPhoneDBv2 data preparation"
+author: "Irepan Salvador-Martinez (after Laura JG)"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.align = "center")
+```
+
+## Objective
+In this Rmarkdown document, we are going to prepare the data into the format needed to run [CellPhoneDB v2](https://www.nature.com/articles/s41596-020-0292-x).
+
+# Pre-processing
+## Libraries
+```{r warning = FALSE, message = FALSE}
+library(Seurat)
+library(SeuratDisk)
+library(ggplot2)
+```
+
+## Parameters
+Here we will define and load objects and functions that will be used throughout the document.
+```{r}
+# Functions
+source("utils/utils.R")
+```
+
+## Load data
+```{r}
+# Load Seurat object
+E18_PN1_Harm_Mes_res_0.5 <- readRDS("../3.5_Fibrob_level1/E18_PN1_Harm_Mes_res_0.5.rds")
+
+E18_PN1_Harmony <- readRDS("../3.2-Integration/E18_PN1_Harm_Phase_Mes_doublets.rds")
+
+```
+
+
+```{r}
+# d <- read.csv(file = "../3.2-Integration/Mes_doublets_to_remove.csv")
+# doublets <- d$x
+# all_cells <- colnames(E18_PN1_Harmony)
+# E18_PN1_Harmony <- subset(E18_PN1_Harmony, cells = setdiff(all_cells,doublets) )
+# DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", label = F )
+# DimPlot(E18_PN1_Harmony,group.by = "doublets")
+```
+
+
+
+
+```{r}
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", label = T, 
+          split.by = "orig.ident")  * theme_gray() * NoLegend()
+```
+
+
+```{r}
+E18_PN1_Harm_Mes_res_0.5$cluster_res.0.5 <- paste0("cluster_",E18_PN1_Harm_Mes_res_0.5$cluster_res.0.5)
+DimPlot(E18_PN1_Harm_Mes_res_0.5, group.by = "cluster_res.0.5", reduction = "umap.mesench")
+
+```
+
+## pass the cluster anno from mesench to all and continue
+
+```{r}
+mes_cells    <- colnames(E18_PN1_Harm_Mes_res_0.5)
+mes_clusters <- E18_PN1_Harm_Mes_res_0.5$cluster_res.0.5
+
+E18_PN1_Harmony$Cell_Type_Mes_res_0.5 <- as.character(E18_PN1_Harmony$Cell_Type)
+
+for (i in 1:length(mes_cells))
+{
+  x <- which(colnames(E18_PN1_Harmony) == mes_cells[i])
+  E18_PN1_Harmony$Cell_Type_Mes_res_0.5[x] <- mes_clusters[i]
+}
+
+
+```
+
+```{r}
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type_Mes_res_0.5", label = T, repel = T,
+          split.by = "orig.ident")  * theme_gray() * NoLegend()
+```
+
+```{r}
+p1 <- DimPlot(E18_PN1_Harmony, group.by = "Cell_Type_Mes_res_0.5")
+Osteo <- CellSelector(p1)
+```
+```{r}
+PHP <- CellSelector(p1) 
+```
+```{r}
+E18_PN1_Harmony$Cell_Type_Mes_res_0.5[PHP] <- "PHP"
+E18_PN1_Harmony$Cell_Type_Mes_res_0.5[Osteo] <- "Osteoclasts"
+
+```
+
+```{r}
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type_Mes_res_0.5", label = T, repel = T,
+          split.by = "orig.ident")  * theme_gray() * NoLegend()
+```
+```{r}
+saveRDS(object = E18_PN1_Harmony, "ALL_cells_Harmony_Mes_res_0.5.rds")
+
+```
+
+
+
+## Prepare data
+
+```{r}
+E18_PN1_Harmony <- readRDS("ALL_cells_Harmony_Mes_res_0.5.rds")
+celltypes <- unique(E18_PN1_Harmony$Cell_Type_Mes_res_0.5)
+write.csv(x = celltypes, file = "celltypes.txt")
+
+seurat_obj_list <- SplitObject(E18_PN1_Harmony,split.by = "orig.ident")
+rm(E18_PN1_Harmony)
+```
+
+
+### Only E18
+
+```{r}
+E18 <- seurat_obj_list[[1]]
+
+# Rename cell types & selecting good resolution
+E18 <- prepare_cpdb_counts_file(E18)
+E18$cell_type_cpdb <- E18$Cell_Type_Mes_res_0.5
+```
+
+```{r}
+# first step to use CPDB is to convert the mouse genes to human
+homolog_list <- read.delim(file = "utils/mouse_human_homologs_mousify.txt",
+                           header = TRUE, quote = "", sep = ",")
+homolog_list <- homolog_list[, c("Human.Symbol", "Mouse.Symbol")]
+
+# to get mouse gene names
+# first keep only genes for which we have a human ortholog
+ortholog_match <- E18[["RNA"]]@data[rownames(E18) %in% homolog_list$Mouse.Symbol, ]
+human_genes <- c()
+# iterate over rownames and create new list of human names
+# this is to preserve order and ensure no gene goes missing
+homolog_list$Human.Symbol <- as.character(homolog_list$Human.Symbol)
+homolog_list$Mouse.Symbol <- as.character(homolog_list$Mouse.Symbol)
+for (mouse_gene in rownames(ortholog_match)){
+  human_genes <- c(human_genes,
+                   homolog_list$Human.Symbol[homolog_list$Mouse.Symbol == mouse_gene])
+}
+rownames(ortholog_match) <- human_genes
+
+```
+
+```{r}
+# Create a new Seurat object with the human genes as SCT metadata
+human_E18 <- E18
+human_E18[["RNA"]]@data <- ortholog_match
+# cleanup
+rm(data, gene, homolog_list, human_genes, matrix, mouse_gene, my_conversion, ortholog_match)
+gc()
+```
+
+
+
+
+#### Generate output files
+```{r}
+# Create directory
+directory_path <- "E18_subclusters/"
+dir.create(directory_path, showWarnings = FALSE)
+# Generate counts file
+intermediate_h5_file_path <-"E18_subclusters/cpdb_logcounts_human_E18.h5Seurat"
+generate_cpdb_counts_file(human_E18, intermediate_h5_file_path)
+# Generate metadata file
+metadata_file_path <- "E18_subclusters/cpdb_metadata_human_E18.txt"
+generate_cpdb_metadata_file(human_E18, metadata_file_path)
+```
+
+
+### Only PN1
+
+```{r}
+PN1 <- seurat_obj_list[[2]]
+
+# Rename cell types & selecting good resolution
+PN1 <- prepare_cpdb_counts_file(PN1)
+PN1$cell_type_cpdb <- PN1$Cell_Type_Mes_res_0.5
+```
+
+```{r}
+# first step to use CPDB is to convert the mouse genes to human
+homolog_list <- read.delim(file = "utils/mouse_human_homologs_mousify.txt",
+                           header = TRUE, quote = "", sep = ",")
+homolog_list <- homolog_list[, c("Human.Symbol", "Mouse.Symbol")]
+
+# to get mouse gene names
+# first keep only genes for which we have a human ortholog
+ortholog_match <- PN1[["RNA"]]@data[rownames(PN1) %in% homolog_list$Mouse.Symbol, ]
+human_genes <- c()
+# iterate over rownames and create new list of human names
+# this is to preserve order and ensure no gene goes missing
+homolog_list$Human.Symbol <- as.character(homolog_list$Human.Symbol)
+homolog_list$Mouse.Symbol <- as.character(homolog_list$Mouse.Symbol)
+for (mouse_gene in rownames(ortholog_match)){
+  human_genes <- c(human_genes,
+                   homolog_list$Human.Symbol[homolog_list$Mouse.Symbol == mouse_gene])
+}
+rownames(ortholog_match) <- human_genes
+
+```
+
+```{r}
+# Create a new Seurat object with the human genes as SCT metadata
+human_PN1 <- PN1
+human_PN1[["RNA"]]@data <- ortholog_match
+# cleanup
+rm(data, gene, homolog_list, human_genes, matrix, mouse_gene, my_conversion, ortholog_match)
+gc()
+```
+
+
+
+
+#### Generate output files
+```{r}
+# Create directory
+directory_path <- "PN1_subclusters/"
+dir.create(directory_path, showWarnings = FALSE)
+# Generate counts file
+intermediate_h5_file_path <-"PN1_subclusters/cpdb_logcounts_human_PN1.h5Seurat"
+generate_cpdb_counts_file(human_PN1, intermediate_h5_file_path)
+# Generate metadata file
+metadata_file_path <- "PN1_subclusters/cpdb_metadata_human_PN1.txt"
+generate_cpdb_metadata_file(human_PN1, metadata_file_path)
+```
+
+# Session Info
+```{r}
+sessionInfo()
+```

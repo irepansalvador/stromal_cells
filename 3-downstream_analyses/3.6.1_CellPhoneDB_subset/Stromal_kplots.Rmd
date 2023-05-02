@@ -1,0 +1,381 @@
+---
+title: "Cellphone DB plotting"
+output:
+  html_document:
+    df_print: paged
+---
+
+R plotting functions to plot gene expression data of single-cell data.
+from https://github.com/zktuong/ktplots/
+
+```{r}
+# if (!requireNamespace("devtools", quietly = TRUE))
+#     install.packages("devtools")
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# devtools::install_github('zktuong/ktplots', dependencies = TRUE)
+```
+
+
+```{r}
+library(loomR)
+library(Seurat)
+library(patchwork)
+library(ktplots)
+#data(kidneyimmune)
+```
+
+
+```{r}
+E18_PN1_Harmony <- readRDS("../3.6_CellPhoneDB/ALL_cells_Harmony_Mes_res_0.5.rds")
+celltypes <- unique(E18_PN1_Harmony$Cell_Type_Mes_res_0.5)
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type_Mes_res_0.5")
+```
+
+
+```{r}
+seurat_obj_list <- SplitObject(E18_PN1_Harmony,split.by = "orig.ident")
+E18_Harmony <- seurat_obj_list[[1]]
+DimPlot(E18_Harmony, group.by = "Cell_Type_Mes_res_0.5")
+rm(E18_PN1_Harmony)
+```
+
+## Transform to SCE object
+
+```{r}
+# first step to use CPDB is to convert the mouse genes to human
+homolog_list <- read.delim(file = "../3.6_CellPhoneDB/utils/mouse_human_homologs_mousify.txt",
+                           header = TRUE, quote = "", sep = ",")
+homolog_list <- homolog_list[, c("Human.Symbol", "Mouse.Symbol")]
+
+# to get mouse gene names
+# first keep only genes for which we have a human ortholog
+ortholog_data <- E18_Harmony[["RNA"]]@data[rownames(E18_Harmony) %in% homolog_list$Mouse.Symbol, ]
+human_genes <- c()
+# iterate over rownames and create new list of human names
+# this is to preserve order and ensure no gene goes missing
+homolog_list$Human.Symbol <- as.character(homolog_list$Human.Symbol)
+homolog_list$Mouse.Symbol <- as.character(homolog_list$Mouse.Symbol)
+for (mouse_gene in rownames(ortholog_data)){
+  human_genes <- c(human_genes,
+                   homolog_list$Human.Symbol[homolog_list$Mouse.Symbol == mouse_gene])
+}
+rownames(ortholog_data) <- human_genes
+
+# first keep only genes for which we have a human ortholog
+ortholog_counts <- E18_Harmony[["RNA"]]@counts[rownames(E18_Harmony) %in% homolog_list$Mouse.Symbol, ]
+human_genes <- c()
+# iterate over rownames and create new list of human names
+# this is to preserve order and ensure no gene goes missing
+for (mouse_gene in rownames(ortholog_counts)){
+  human_genes <- c(human_genes,
+                   homolog_list$Human.Symbol[homolog_list$Mouse.Symbol == mouse_gene])
+}
+rownames(ortholog_counts) <- human_genes
+
+```
+
+```{r}
+# Create a new Seurat object with the human genes as SCT metadata
+E18_human_orth <- E18_Harmony
+E18_human_orth[["RNA"]]@data <- ortholog_data
+E18_human_orth[["RNA"]]@counts <- ortholog_counts
+# cleanup
+rm(E18_Harmony, homolog_list, human_genes, mouse_gene)
+gc()
+```
+
+```{r}
+library(scater)
+E18_human_orth.sce <- as.SingleCellExperiment(E18_human_orth)
+E18_plot <- scater::plotReducedDim(object = E18_human_orth.sce, dimred = "UMAP", 
+                       colour_by = "Cell_Type_Mes_res_0.5", )
+E18_plot
+```
+
+```{r}
+out_dir <- "../3.6_CellPhoneDB/E18_subclusters/out/"
+#out_dir2 <- "../3.6_CellPhoneDB/E18_subclusters/curation/out/"
+means2 <- read.delim(paste0(out_dir,"means.txt"), check.names = FALSE)
+#means2 <- read.delim(paste0(out_dir,"significant_means.txt"), check.names = FALSE)
+pvalues2 <- read.delim(paste0(out_dir,"pvalues.txt"), check.names = FALSE)
+deconvoluted2 <- read.delim(paste0(out_dir,"deconvoluted.txt"), check.names = FALSE)
+
+means2_mod <- means2[,12:dim(means2)[2]]
+x <- means2_mod < 0.5 
+means2_mod[x] <- 0
+
+means3 <- means2
+means3[,12:dim(means2)[2]] <- means2_mod
+```
+
+
+
+# MAIN PLOTS
+
+
+```{r}
+plot_svg <- function(plot, file){
+  svg(filename = file, width = 10, height = 6)
+  replayPlot(plot)
+  dev.off()
+}
+
+```
+
+
+## Cells Endothelial (EC) with clusters: AFP, CLFP, OsC , Myo and GFP
+EC   <- Endothelial
+AFP  <- cluster_7
+CLFP <- cluster_2
+Osc  <- cluster_9
+Myo  <- cluster_8
+GFP  <- cluster_0
+
+```{r}
+
+p_Endo <- plot_cpdb4(
+    cell_type1 = 'Endothelial', cell_type2 = 'cluster_7|cluster_2|cluster_9|cluster_8|cluster_0',
+    scdata = E18_human_orth.sce,
+    idents = 'Cell_Type_Mes_res_0.5', # column name where the cell ids are located in the metadata
+    interaction = c("C5AR1-RPS19",#"APP-CD74",
+                   "COL13A1-a1b1 complex",#"ICAM1-ITGAL",
+                    #"DLK1-NOTCH2","NOTCH1-DLK1",  "PLXNB2-SEMA4D",
+                    "SELE-GLG1",
+                    "SELL-CD34",
+                    "SELP-CD34"
+                #    "VCAM1-a4b1 complex", "VCAM1-a4b7 complex"
+                ),
+#    frac = 0.3,
+    desiredInteractions = list(c('Endothelial','cluster_7'),
+                               c('Endothelial','cluster_2'),
+                               c('Endothelial','cluster_9'),
+                               c('Endothelial','cluster_8'),
+                               c('Endothelial','cluster_0')
+                               ), 
+    grid_scale = 0, 
+    alpha = 0.75,
+    legend.pos.y = 70,
+    means = means3,
+    pvals = pvalues2,
+    deconvoluted = deconvoluted2, # new options from here on specific to plot_cpdb3
+    keep_significant_only = TRUE,
+    standard_scale = TRUE,
+    remove_self = TRUE
+    )
+#plot_svg(plot = p_Endo, file = "plots/p_Endo.svg")
+
+p_Endo
+```
+
+## SFP con los clusters : AFP, CLFP,  GFP y Myo
+
+SFP <- Cluster_1
+AFP  <- Cluster_7
+CLFP <- Cluster_2
+GFP <- Cluster_0
+Myo <- Cluster_8
+
+```{r}
+
+p_SFP <- plot_cpdb4(
+    cell_type1 = 'cluster_1', cell_type2 = 'cluster_7|cluster_2|cluster_0|cluster_8',
+    scdata = E18_human_orth.sce,
+    idents = 'Cell_Type_Mes_res_0.5', # column name where the cell ids are located in the metadata
+    interaction = c("JAG1-NOTCH3",
+                    "DLK1-NOTCH3",
+                    "NOTCH1-JAG1",
+                    "JAG1-NOTCH2",
+                    "PLD2-ARF1"
+                    ),
+#    frac = 0.3,
+    desiredInteractions = list(c('cluster_1','cluster_7'),
+                               c('cluster_1','cluster_2'),
+                               c('cluster_1','cluster_0'),
+                               c('cluster_1','cluster_8')
+                               ),
+    grid_scale = 0, 
+    alpha = 0.75,
+    legend.pos.y = 70,
+    means = means3,
+    pvals = pvalues2,
+    deconvoluted = deconvoluted2, # new options from here on specific to plot_cpdb3
+    keep_significant_only = TRUE,
+    standard_scale = TRUE,
+    remove_self = TRUE
+    )
+#plot_svg(plot = p_SFP, file = "plots/p_SFP.svg")
+p_SFP
+```
+
+
+## OsC con los clusters TC , ChC, AFP y SFP 
+
+OsC <- cluster_9
+TC  <- cluster_3
+ChC <- cluster_6
+AFP <- cluster_7
+SFP <- cluster_1
+
+```{r}
+
+p_OsC <- plot_cpdb4(
+    cell_type1 = 'cluster_9', cell_type2 = 'cluster_3|cluster_6|cluster_7|cluster_1',
+    scdata = E18_human_orth.sce,
+    idents = 'Cell_Type_Mes_res_0.5', # column name where the cell ids are located in the metadata
+    interaction = c("CADM1-CADM1",
+                    "DLK1-NOTCH3",
+                    "NECTIN2-NECTIN3",
+                    "CADM1-NECTIN3",
+                    "CADM3-CADM1",
+                    "COL13A1-a1b1 complex",
+                    "SELL-CD34"
+                    ),
+#    frac = 0.3,
+     desiredInteractions = list(c('cluster_9','cluster_3'),
+                                c('cluster_9','cluster_6'),
+                                c('cluster_9','cluster_7'),
+                                c('cluster_9','cluster_1')
+                                ),
+    grid_scale = 0, 
+    alpha = 0.75,
+    legend.pos.y = 70,
+    means = means3,
+    pvals = pvalues2,
+    deconvoluted = deconvoluted2, # new options from here on specific to plot_cpdb3
+    keep_significant_only = TRUE,
+    standard_scale = TRUE,
+    remove_self = TRUE
+    )
+
+#plot_svg(plot = p_OsC, file = "plots/p_OsC.svg")
+p_OsC
+```
+
+## EO/BAS con los clusters : AFP, CLFP,  GFP y SFP 
+
+Eo_Bas <- Eo/Bas
+AFP  <- Cluster_7
+CLFP <- Cluster_2
+GFP <- Cluster_0
+SFP <- Cluster_1
+
+```{r}
+
+p_EoBas <- plot_cpdb4(
+    cell_type1 = 'Eo/Bas', cell_type2 = 'cluster_7|cluster_2|cluster_0|cluster_1',
+    scdata = E18_human_orth.sce,
+    idents = 'Cell_Type_Mes_res_0.5', # column name where the cell ids are located in the metadata
+    interaction = c("SIRPA-CD47",
+                    "CD74-APP",
+                    "C5AR1-RPS19",
+                    "SELL-CD34",
+                    "ICAM1-aLb2 complex",
+                    "THY1-aMb2 complex",
+                    "ICAM1-aMb2 complex"
+                    ),
+#    frac = 0.3,
+    desiredInteractions = list(c('Eo/Bas','cluster_7'),
+                               c('Eo/Bas','cluster_2'),
+                               c('Eo/Bas','cluster_0'),
+                               c('Eo/Bas','cluster_1')
+                               ),
+    grid_scale = 0, 
+    alpha = 0.75,
+    legend.pos.y = 70,
+    means = means3,
+    pvals = pvalues2,
+    deconvoluted = deconvoluted2, # new options from here on specific to plot_cpdb3
+    keep_significant_only = TRUE,
+    standard_scale = TRUE,
+    remove_self = TRUE
+    )
+#plot_svg(plot = p_EoBas, file = "plots/p_EoBas.svg")
+p_EoBas
+```
+
+
+## ILC-TSP2 con los clusters AFP, GFP Y CLFP
+
+ILC-TSP2 <- CLP_NK_Tcells
+AFP   <- cluster_7
+GFP   <- cluster_0
+CLFP  <- cluster_2
+
+```{r}
+
+p_ILC <- plot_cpdb4(
+    cell_type1 = 'CLP_NK_Tcells', cell_type2 = 'cluster_7|cluster_0|cluster_2',
+    scdata = E18_human_orth.sce,
+    idents = 'Cell_Type_Mes_res_0.5', # column name where the cell ids are located in the metadata
+    interaction = c("ICAM1-aLb2 complex",
+                    "ICAM1-ITGAL",
+                    "ICAM1-aMb2 complex",
+                    "VCAM1-a4b1 complex",
+                    "VCAM1-a4b7 complex",
+                    "SELL-CD34",
+                    "PLXNB2-SEMA4D",
+                    "C5AR1-RPS19"
+                    ),
+#    frac = 0.3,
+    desiredInteractions = list(c('CLP_NK_Tcells','cluster_7'),
+                               c('CLP_NK_Tcells','cluster_0'),
+                               c('CLP_NK_Tcells','cluster_2')
+                               ),
+    grid_scale = 0, 
+    alpha = 0.75,
+    legend.pos.y = 70,
+    means = means3,
+    pvals = pvalues2,
+    deconvoluted = deconvoluted2, # new options from here on specific to plot_cpdb3
+    keep_significant_only = TRUE,
+    standard_scale = TRUE,
+    remove_self = TRUE
+    )
+#plot_svg(plot = p_ILC, file = "plots/p_ILC.svg")
+p_ILC
+```
+
+
+##  HCP con los clusters SFP, AFP, GFP y CLFP 
+
+HCP  <- HPC
+SFP  <- cluster_1
+AFP  <- cluster_7
+GFP  <- cluster_0
+CLFP <- cluster_2
+
+
+```{r}
+
+p_HPC <- plot_cpdb4(
+    cell_type1 = 'HPC', cell_type2 = 'cluster_1|cluster_7|cluster_0|cluster_2',
+    scdata = E18_human_orth.sce,
+    idents = 'Cell_Type_Mes_res_0.5', # column name where the cell ids are located in the metadata
+    interaction = c("SIRPA-CD47",
+                    "CD74-APP",
+                    "SELL-CD34",
+                    "PLD2-ARF1"
+                    ),
+#    frac = 0.3,
+    desiredInteractions = list(c('HPC','cluster_1'),
+                               c('HPC','cluster_7'),
+                               c('HPC','cluster_0'),
+                               c('HPC','cluster_2')
+                               ),
+    grid_scale = 0, 
+    alpha = 0.75,
+    legend.pos.y = 70,
+    means = means3,
+    pvals = pvalues2,
+    deconvoluted = deconvoluted2, # new options from here on specific to plot_cpdb3
+    keep_significant_only = TRUE,
+    standard_scale = TRUE,
+    remove_self = TRUE
+    )
+
+#plot_svg(plot = p_HPC, file = "plots/p_HPC.svg")
+p_HPC
+
+```
+
