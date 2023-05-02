@@ -1,0 +1,246 @@
+---
+title: "Dotplot and heatmaps"
+author: "Irepan Salvador-Martinez"
+date: "07/08/2022"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  out.width = "100%", fig.align = "center",fig.width = 8,fig.height = 5,
+  message = FALSE, warning = FALSE
+)
+options(width = 900)
+```
+
+
+
+# About this analysis
+
+This notebook produces the dotplot figure(s)
+
+
+```{r packages}
+library(dplyr)
+library(Seurat)
+library(cowplot)
+library(patchwork)
+library(ggplot2)
+library(BiocStyle)
+library(harmony)
+library(dittoSeq)
+library(RColorBrewer)
+
+library(SeuratDisk)
+library(SeuratData)
+```
+# Preprocess
+
+## Load pre-processed data
+
+
+
+```{r}
+E18_PN1_Harmony <- readRDS("ALL_cells_reannotated.rds")
+```
+
+## Palettes
+
+```{r}
+## install.packages("Polychrome")
+# Color palette
+set.seed(123) # for reproducibility
+color_palette <- Polychrome::createPalette(25,c("#ff0000", "#00ff00", "#0000ff")) 
+                                          # c("#fc6060", "#74f774", "#7c7cfc"))
+names(color_palette) <- NULL
+#Polychrome::swatch(color_palette)
+```
+
+
+```{r}
+DimPlot(object = E18_PN1_Harmony, group.by = "Cell_type_120922", pt.size = 0.5,cols = (color_palette),
+        label = T, repel = T )
+
+
+```
+
+
+# Reorder levels
+
+```{r}
+E18_PN1_Harmony@meta.data$Cell_type_120922 <- as.character(Idents(E18_PN1_Harmony))
+E18_PN1_Harmony@meta.data$Cell_type_120922[E18_PN1_Harmony@meta.data$Cell_type_120922=="TFP"] = "GFP"
+
+mylevels <- c( "SFP","GFP","AFP", "CLFP", "ACP", "PFP", 
+               "TC", "Chondrogenic",
+               "Osteogenic", "Myo", "EC", "SC",
+               "PHP", "HPC",
+               "Mon_Prog", "Mon_DC",  "Sca1_HC",
+               "B_Lin", "Eo_Bas", 
+               "ICL_TSP2", "Im_Neu",  "Neu",
+               "Oc", "Ery"
+               )
+
+
+E18_PN1_Harmony@meta.data$Cell_type_120922 <- factor(E18_PN1_Harmony@meta.data$Cell_type_120922, 
+                                                     levels = mylevels)
+
+```
+
+
+```{r}
+DimPlot(E18_PN1_Harmony, group.by = "Cell_type_120922", label = T, repel = T )
+```
+
+## Define marker genes 
+
+```{r}
+marker_genes <- c(
+                  "Ly6a",# "Cadm3",   # SFP	
+                  "Gas6", #"Twist2",   # GFP
+                  "Ptch2", "Notch3", # AFP
+                  "Entpd2", "Cxcl12",# CLFP
+                  "Tspan15", "Sox5", # ACP
+                  "Nusap1","Mki67", #"Prrx1", # PFP
+                  "Scx", "Tnmd",     # Tenogenic
+                  "Sox9", "Col2a1",  # Chondrogenic
+                  "Runx2", "Sp7",    # Osteogenic
+                  "Cdh15", "Pax7",   # Myo
+                  "Pecam1",          # EC
+                  "Plp1",            # SC
+                  "Ptprc","Ms4a6c","Cenpe", # PHP
+                  "Kit", # "Cd34",     # HPC
+                  "Cd14",            # Mono Prog
+                  "Cd83", "Ms4a7",   # Mono and DC
+                  "Flt3",            # Sca1HC
+                  "Cd79a",            # B Lin
+                  "Il6","Cd200r3",   # Eo and Bas
+                  "Cd3g", "Klrd1",   # 	ILC and TSP2
+                  "Cd177",       # Im Neu
+                  "Mmp9",            # Neu
+                  "Ctsk",            # Oc
+                  "Hbb-bt"           # Ery
+                  
+                  )
+```
+
+```{r}
+p1 <- DotPlot(object = E18_PN1_Harmony,assay = "RNA", group.by = "Cell_type_120922", cols = c("lightcyan" , "magenta4"),  dot.scale = 4, features =  marker_genes) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + FontSize(x.text = 10) + NoLegend() 
+```
+
+```{r}
+p1a <- DotPlot(object = E18_PN1_Harmony,assay = "RNA",split.by = "orig.ident",  group.by = "Cell_type_120922", cols = c("lightcyan" , "magenta4"),  dot.scale = 4, features =  marker_genes) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + FontSize(x.text = 10) + NoLegend() 
+
+p1a
+```
+
+
+```{r, fig.height=5, fig.width=8}
+p1 
+```
+
+
+```{r}
+p3 <- dittoDotPlot(E18_PN1_Harmony, marker_genes, group.by = "Cell_type_120922", size = 5.5, min.color = "lightcyan", max.color = "purple4", min.percent = 0, legend.color.breaks= c(0, 2, 4))
+data_tmp <- p3$data
+p3 + geom_tile(aes(y=data_tmp$grouping, x = length(unique(var))+1.5,
+                   size = 0, fill = grouping), show.legend = F) +
+  scale_fill_manual(values=color_palette)
+```
+
+```{r}
+dittoDotPlot(E18_PN1_Harmony, marker_genes,split.by = "orig.ident", group.by = "Cell_type_120922", size = 5.5, min.color = "lightcyan", max.color =  "#660077")#, min.percent = 0, legend.color.breaks= c(0, 2, 4))
+```
+
+
+
+
+
+```{r}
+pp1 <- p1 + geom_tile(aes(y=data_tmp$grouping, x = -1, #x = length(unique(data_tmp$var)+2),
+                   size = 0, fill = data_tmp$grouping), show.legend = F) +
+  scale_fill_manual(values=color_palette) 
+pp1
+```
+
+```{r}
+p0 <- DimPlot(object = E18_PN1_Harmony, group.by = "Cell_type_120922", pt.size = 0.5,cols = (color_palette),
+        label = T, repel = T )  + ggtitle("")  + NoLegend() 
+p0
+```
+
+```{r}
+p0a <- DimPlot(object = E18_PN1_Harmony, group.by = "Cell_type_120922", 
+               split.by = "orig.ident",
+               pt.size = 0.1,cols = (color_palette),
+               label = T, repel = T )   + theme_minimal_grid() + NoLegend()
+p0a
+```
+
+
+```{r}
+p0b <- DimPlot(object = E18_PN1_Harmony, group.by = "Cell_type_120922", 
+               split.by = "orig.ident",
+               pt.size = 0.1,cols = (color_palette)#,label = T, repel = T )
+               ) + theme_minimal_grid() + NoLegend()
+p0b
+```
+
+
+```{r}
+#p4 <- dittoBarPlot(object = E18_PN1_Harmony, main = "", var = "Cell_type_120922", group.by = "orig.ident", #color.panel = color_palette[24:1] , var.labels.reorder =  c(1:24))# + NoLegend()
+p4 <- dittoBarPlot(object = E18_PN1_Harmony, main = "", var = "Cell_type_120922", group.by = "orig.ident", color.panel = color_palette[24:1], retain.factor.levels = T,   var.labels.reorder =  c(24:1))# + NoLegend()
+p4
+```
+
+
+
+```{r}
+p0 + pp1
+```
+
+```{r, fig.height=10, fig.width=10}
+p0a / pp1
+```
+
+
+```{r, fig.height=10, fig.width=10}
+
+pp1a <- (p4+NoLegend()) + pp1 + plot_layout(widths = c(1, 4))
+
+p0a + pp1a + plot_layout(heights = c(2,1),ncol = 1 )
+
+
+```
+
+
+
+```{r, fig.height=10, fig.width=10}
+#pp1a <- (p4+NoLegend()) + pp1 + plot_layout(widths = c(1, 4))
+
+p0b + pp1a + plot_layout(heights = c(2,1),ncol = 1 )
+
+
+```
+
+```{r, eval=FALSE}
+saveRDS(E18_PN1_Harmony, file = "ALL_cells_reannotated_final.rds")
+```
+
+
+```{r}
+source(file = "../../utils/seurat2shiny.R")
+
+
+```
+
+
+
+```{r}
+sessionInfo()
+```
+

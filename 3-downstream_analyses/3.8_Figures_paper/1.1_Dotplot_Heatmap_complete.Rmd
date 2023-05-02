@@ -1,0 +1,150 @@
+---
+title: "Dotplot and heatmaps"
+author: "Irepan Salvador-Martinez"
+date: "17/04/2023"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  out.width = "100%", fig.align = "center",fig.width = 8,fig.height = 5,
+  message = FALSE, warning = FALSE
+)
+options(width = 900)
+```
+
+
+
+# About this analysis
+
+This notebook produces the dotplot figure(s)
+
+
+```{r packages}
+library(dplyr)
+library(Seurat)
+library(cowplot)
+library(patchwork)
+library(ggplot2)
+library(BiocStyle)
+library(harmony)
+library(dittoSeq)
+library(RColorBrewer)
+
+library(SeuratDisk)
+library(SeuratData)
+```
+# Preprocess
+
+## Load pre-processed data
+
+
+
+```{r}
+E18_PN1_Harmony <- readRDS("ALL_cells_reannotated_final.rds")
+```
+
+## Palettes
+
+```{r}
+## install.packages("Polychrome")
+# Color palette
+set.seed(123) # for reproducibility
+color_palette <- Polychrome::createPalette(25,c("#ff0000", "#00ff00", "#0000ff")) 
+                                          # c("#fc6060", "#74f774", "#7c7cfc"))
+names(color_palette) <- NULL
+#Polychrome::swatch(color_palette)
+```
+
+
+```{r}
+DimPlot(object = E18_PN1_Harmony, group.by = c("Cell_Type_Mes_res_0.5", "Cell_type_120922"),
+        pt.size = 0.5,cols = (color_palette),
+        label = T, repel = T ) * NoLegend()
+
+
+```
+
+
+# Reorder levels
+
+```{r}
+E18_PN1_Harmony@meta.data$Cell_type_170423 <- as.character(E18_PN1_Harmony@meta.data$Cell_type_120922)
+E18_PN1_Harmony@meta.data$Cell_type_170423[E18_PN1_Harmony@meta.data$Cell_type_170423=="Chondrogenic"] = "ChC"
+E18_PN1_Harmony@meta.data$Cell_type_170423[E18_PN1_Harmony@meta.data$Cell_type_170423=="Osteogenic"] = "OsC"
+
+
+
+mylevels <- c( "EC", "SC", "Myo", "OsC", "ChC",
+               "TC", "CLFP", "SFP","GFP", 
+               "ACP", "AFP", "PFP", 
+               "Ery", "Eo_Bas", "Neu",  "Im_Neu",
+               "Mon_Prog", "PHP", "HPC",
+               "Sca1_HC", "Oc", "Mon_DC",
+               "ICL_TSP2",
+               "B_Lin"
+               )
+
+
+E18_PN1_Harmony@meta.data$Cell_type_170423 <- factor(E18_PN1_Harmony@meta.data$Cell_type_170423, 
+                                                     levels = mylevels, ordered = TRUE)
+
+```
+
+
+```{r}
+DimPlot(E18_PN1_Harmony, group.by = c("Cell_type_120922", "Cell_type_170423"),
+        label = T, repel = T ) * NoLegend()
+```
+
+## Define marker genes 
+
+```{r}
+marker_genes <- c("Pecam1","Tie1","Tek","Cdh5","Kdr","Nr2f2","Flt4","Ly6c1","Kitl","Ctla2a",
+                  "Id2","Fabp4","Plp1","Pou3f1","Col20a1","Sox10","Sox2","Pax7","Myf5","Fgfr4","Cdh15","Msc","Myod1","Pitx2","Acta2","Tagln","Sox8","Runx2","Bglap","Sp7","Mmp13","Spp1","Ibsp","Bglap2","Cd200","Col2a1","Col9a1","Col9a2","Col9a3","Acan","Sox9","Sox5","Fmod",#"Pgr4",
+                  "Scx","Tnmd","Thbs4","Kera","Cpxm2","Ptx4","Cxcl12","Ly6h","Lpl","Ghr","Entpd2","Ly6a","Cadm3","Cd248","Prrx2","Twist2","Ntrk2","Gas6","Eln","Igfbp2","Gdf5","Pthlh","Barx1","Cd55","Ackr2","Tspan15","Procr","Hbegf","Prg4","Sema3a","Wnt4","Ptch2","Gli1","Notch3","Angpt2","Gata6","Steap4","Prrx1","Col1a1","Col1a2","Pdgfra","Nusap1","Cenpf","Cenpe","Mki67","Gypa","Hbb-bt","Hba-a2","Slc4a1","Il6","Cd69","Ms4a2","Cd200r3","Nkg7","Gzmb","Il4","Il13","Mmp9","Il1rn","S100a9","Cxcl2","Cxcr2","Cd177","Ly6g","Retnlg","Cd14","Adgre1","F13a1","Ms4a6c","Cd48","H2-DMa","Ptprc","Cd52","Cd53","Kit","Flt3","Elane","Hmga2","Ctsg","Tal1","Meis1","H2-Aa","Cd74","Ctsk","Tnfrsf11a","Atp6v0d2","Cd83","C1qb","C1qa","Ms4a7","Cd7","Cd3g","Ccl5","Trbc1","Klrd1","Gata3","Cd2","Il2rb","Thy1","Tcf7","Cxcr6","Cd247","Lck","Pax5","Cd19","Cd79a","Mzb1","Tcf3","Ebf1")
+```
+
+```{r}
+# '%!in%' <- function(x,y)!('%in%'(x,y))
+# marker_genes[marker_genes %!in%  rownames(E18_PN1_Harmony)]
+
+
+
+```
+
+```{r}
+E18_PN1_Harmony <- SetIdent(object = E18_PN1_Harmony, value = "Cell_type_170423")
+```
+
+```{r}
+E18_PN1_Harmony_list <- SplitObject(E18_PN1_Harmony, split.by = "orig.ident")
+```
+
+
+
+```{r}
+E18_hm <- DoHeatmap(object = E18_PN1_Harmony_list[[1]], features = marker_genes, group.by = "Cell_type_170423" ) + NoLegend() + ggtitle("E18")
+
+P21_hm <- DoHeatmap(object = E18_PN1_Harmony_list[[2]], features = marker_genes, group.by = "Cell_type_170423" ) + NoLegend() + ggtitle("P21")
+
+
+```
+
+
+```{r}
+DoHeatmap(object = E18_PN1_Harmony, features = marker_genes, group.by = "Cell_type_170423" ) + NoLegend()
+```
+
+
+
+
+
+```{r}
+sessionInfo()
+```
+

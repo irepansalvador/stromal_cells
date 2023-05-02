@@ -1,0 +1,185 @@
+---
+title: "Rename clusters"
+author: "Irepan Salvador-Martinez"
+date: "17/04/2023"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  out.width = "100%", fig.align = "center",fig.width = 8,fig.height = 5,
+  message = FALSE, warning = FALSE
+)
+options(width = 900)
+```
+
+
+
+# About this analysis
+
+In here we rename the clusters based on the marker gene analysis previously 
+made.
+
+
+```{r packages}
+library(dplyr)
+library(Seurat)
+library(cowplot)
+library(patchwork)
+library(ggplot2)
+library(BiocStyle)
+library(harmony)
+library(dittoSeq)
+library(RColorBrewer)
+
+library(SeuratDisk)
+library(SeuratData)
+```
+# Load pre-processed data
+
+## Remove or rename doublets
+
+```{r}
+#E18_PN1_Harmony <- readRDS("../3.2-Integration/E18_PN1_Harm_Phase_doublets.rds")
+E18_PN1_Harmony <- readRDS("../3.6_CellPhoneDB/ALL_cells_Harmony_Mes_res_0.5.rds")
+```
+
+
+### Osteoclasts 
+A population of osteoclasts have been misclassified as doublets. 
+Correct this after the latest cell type classification.
+
+```{r}
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type_Mes_res_0.5", label = T, repel = T )
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", label = T, repel = T )
+
+```
+
+```{r}
+table(E18_PN1_Harmony@meta.data$Cell_Type_Mes_res_0.5)
+```
+
+```{r}
+table(E18_PN1_Harmony@meta.data$Cell_Type)
+```
+
+```{r, eval=FALSE}
+osteo <- E18_PN1_Harmony@meta.data$Cell_Type_Mes_res_0.5=="Osteoclasts"
+E18_PN1_Harmony@meta.data$Cell_Type[osteo] <- "Osteoclasts" 
+
+DimPlot(E18_PN1_Harmony, group.by = "Cell_Type", label = T, repel = T )
+```
+
+### Doublets
+
+
+```{r, eval=FALSE}
+not_doublets <- which(E18_PN1_Harmony@meta.data$Cell_Type != "doublets" )
+E18_PN1_Harmony <- subset(E18_PN1_Harmony, cells = not_doublets )
+```
+
+
+#### checkpoint
+```{r}
+E18_PN1_Harmony <- readRDS("ALL_cells_reannotated_final.rds")
+gc()
+
+```
+
+```{r}
+p1 <- DimPlot(E18_PN1_Harmony, group.by = "Cell_Type_Mes_res_0.5", label = T, repel = T )
+p1
+```
+
+
+
+```{r, eval=FALSE}
+allcells <- colnames(E18_PN1_Harmony)
+E18_PN1_Harmony@meta.data$Cell_type_170423 <- E18_PN1_Harmony@meta.data$Cell_Type_Mes_res_0.5
+
+```
+
+
+```{r, eval=FALSE}
+Oc <- CellSelector(plot = p1)
+E18_PN1_Harmony@meta.data$Cell_type_170423[allcells %in% Oc] <- "Oc" 
+E18_PN1_Harmony@meta.data$Cell_Type[osteo] <- "Osteoclasts" 
+```
+
+
+```{r, eval=FALSE}
+Sca1 <- CellSelector(plot = p1)
+E18_PN1_Harmony@meta.data$Cell_type_120922[allcells %in% Sca1] <- "Sca1_HC" 
+```
+
+```{r}
+p2 <- DimPlot(E18_PN1_Harmony, group.by = "Cell_type_120922", label = T, repel = T )
+p2
+```
+
+
+```{r, eval=FALSE}
+saveRDS(E18_PN1_Harmony, file = "ALL_cells_reannotated.rds")
+```
+
+
+
+## Rename clusters
+
+
+```{r, eval=FALSE}
+current.cluster.ids <- c("Neutrophils1", "Neutrophils2", "cluster_10",
+                         "Endothelial", "cluster_3", "Monocytes", "Oc",
+                         "Osteoclasts", "cluster_8", "cluster_9", "cluster_6",
+                         "cluster_2", "cluster_1", "cluster_0", "cluster_4",
+                         "cluster_7", "cluster_5", "Erythroid","Eo/Bas","PHP",
+                         "HPC", "CLP_NK_Tcells", "B_cell", "Sca1_HC", "cluster_11")
+
+new.cluster.ids     <- c("Neu", "Im_Neu", "SC", "EC", "TC","Mon_Prog","Oc",
+                         "Mon_DC","Myo","Osteogenic","Chondrogenic","CLFP",
+                         "SFP","GFP","ACP","AFP","PFP","Ery","Eo_Bas", "PHP",
+                         "HPC","ICL_TSP2","B_Lin","Sca1_HC", "Chondrogenic")
+
+E18_PN1_Harmony <- SetIdent(object = E18_PN1_Harmony, value = "Cell_type_120922")
+
+E18_PN1_Harmony@active.ident <- plyr::mapvalues(x = E18_PN1_Harmony@active.ident,
+                                                from = current.cluster.ids,
+                                                to = new.cluster.ids)
+
+DimPlot(object = E18_PN1_Harmony,  pt.size = 0.5,  label = T, repel = T )
+```
+
+
+## Palettes
+
+```{r}
+## install.packages("Polychrome")
+# Color palette
+set.seed(123) # for reproducibility
+color_palette <- Polychrome::createPalette(25,c("#ff0000", "#00ff00", "#0000ff")) 
+                                          # c("#fc6060", "#74f774", "#7c7cfc"))
+names(color_palette) <- NULL
+#Polychrome::swatch(color_palette)
+```
+
+
+```{r}
+DimPlot(object = E18_PN1_Harmony,  pt.size = 0.5,cols = (color_palette),
+        label = T, repel = T )
+```
+
+
+```{r, eval=FALSE}
+saveRDS(E18_PN1_Harmony, file = "ALL_cells_reannotated.rds")
+```
+
+
+
+```{r}
+sessionInfo()
+```
+
